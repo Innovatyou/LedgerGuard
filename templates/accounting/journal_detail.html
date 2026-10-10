@@ -1,0 +1,38 @@
+{% extends "base.html" %}{% load lg %}{% block title %}{{ journal }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ journal }} <span class="badge {{ journal.status|status_class }}">{{ journal.get_status_display }}</span></h1>
+<p class="muted">{{ journal.get_journal_type_display }} · {{ journal.description }}</p></div>
+<div class="actions">
+{% if journal.is_editable and journal.prepared_by == request.user %}<a class="btn" href="{% url 'accounting:journal-edit' journal.pk %}">Edit draft</a>
+<form method="post" action="{% url 'accounting:journal-action' journal.pk %}">{% csrf_token %}<input type="hidden" name="action" value="submit"><button class="btn primary">Submit for approval</button></form>{% endif %}
+</div></div>
+{% if journal.rejection_reason and journal.status == 'REJECTED' %}<div class="callout bad">Rejected: {{ journal.rejection_reason }}</div>{% endif %}
+<div class="grid grid-2">
+<div class="card"><dl class="facts">
+<dt>Transaction date</dt><dd>{{ journal.transaction_date|date:"d M Y" }}</dd><dt>Accounting date</dt><dd>{{ journal.accounting_date|date:"d M Y" }}</dd>
+<dt>Period</dt><dd>{{ journal.period|default:"—" }}</dd><dt>Currency</dt><dd>{{ journal.currency }}{% if journal.exchange_rate != 1 %} @ {{ journal.exchange_rate }}{% endif %}</dd>
+<dt>Source reference</dt><dd>{{ journal.source_reference|default:"—" }}</dd><dt>Evidence reference</dt><dd>{{ journal.supporting_reference|default:"—" }}</dd>
+{% if journal.reversal_of %}<dt>Reverses</dt><dd><a href="{% url 'accounting:journal-detail' journal.reversal_of.pk %}">{{ journal.reversal_of }}</a></dd>{% endif %}
+{% if reversal %}<dt>Reversed by</dt><dd><a href="{% url 'accounting:journal-detail' reversal.pk %}">{{ reversal }}</a> ({{ reversal.get_status_display }})</dd>{% endif %}
+</dl></div>
+<div class="card"><dl class="facts">
+<dt>Prepared by</dt><dd>{{ journal.prepared_by }}{% if journal.submitted_at %} · submitted {{ journal.submitted_at|date:"d M Y H:i" }}{% endif %}</dd>
+<dt>Approved by</dt><dd>{{ journal.approved_by|default:"—" }}{% if journal.approved_at %} · {{ journal.approved_at|date:"d M Y H:i" }}{% endif %}</dd>
+<dt>Posted by</dt><dd>{{ journal.posted_by|default:"—" }}{% if journal.posted_at %} · {{ journal.posted_at|date:"d M Y H:i" }}{% endif %}</dd>
+</dl>
+<div class="actions" style="margin-top:.75rem">
+{% if journal.status == 'SUBMITTED' and perms_lg|has:"journal.approve" %}
+<form method="post" action="{% url 'accounting:journal-action' journal.pk %}" class="inline-form">{% csrf_token %}<input type="text" name="comment" placeholder="Comment / reason for rejection">
+<button class="btn success" name="action" value="approve">Approve</button><button class="btn danger" name="action" value="reject">Reject</button></form>{% endif %}
+{% if journal.status == 'APPROVED' and perms_lg|has:"journal.post" %}
+<form method="post" action="{% url 'accounting:journal-action' journal.pk %}" class="inline-form">{% csrf_token %}<input type="hidden" name="action" value="post"><button class="btn primary">Post to ledger</button></form>
+<form method="post" action="{% url 'accounting:journal-action' journal.pk %}" class="inline-form">{% csrf_token %}<input type="text" name="comment" placeholder="Reason" required><button class="btn danger" name="action" value="reject">Reject</button></form>{% endif %}
+{% if journal.status == 'POSTED' and not reversal and perms_lg|has:"journal.reverse" %}
+<form method="post" action="{% url 'accounting:journal-action' journal.pk %}" class="inline-form">{% csrf_token %}<input type="hidden" name="action" value="reverse"><input type="date" name="reversal_date"><input type="text" name="comment" placeholder="Reversal reason (required)" required><button class="btn danger">Request reversal</button></form>{% endif %}
+</div></div></div>
+<div class="card table-wrap"><table class="data"><thead><tr><th>#</th><th>Account</th><th>Description</th><th>Department</th><th class="num">Debit</th><th class="num">Credit</th>{% if journal.exchange_rate != 1 %}<th class="num">Base debit</th><th class="num">Base credit</th>{% endif %}</tr></thead><tbody>
+{% for l in lines %}<tr><td>{{ l.line_no }}</td><td>{{ l.account }}</td><td>{{ l.description }}</td><td>{{ l.department|default:"" }}</td><td class="num">{% if l.debit %}{{ l.debit|money }}{% endif %}</td><td class="num">{% if l.credit %}{{ l.credit|money }}{% endif %}</td>{% if journal.exchange_rate != 1 %}<td class="num">{{ l.base_debit|money }}</td><td class="num">{{ l.base_credit|money }}</td>{% endif %}</tr>{% endfor %}
+</tbody><tfoot><tr><td colspan="4">Totals {% if totals.debit == totals.credit %}<span class="badge ok">Balanced</span>{% else %}<span class="badge bad">Not balanced</span>{% endif %}</td><td class="num">{{ totals.debit|money }}</td><td class="num">{{ totals.credit|money }}</td>{% if journal.exchange_rate != 1 %}<td class="num">{{ totals.base_debit|money }}</td><td class="num">{{ totals.base_credit|money }}</td>{% endif %}</tr></tfoot></table></div>
+<div class="grid grid-2">{% include "includes/history.html" %}
+{% with obj=journal label="journal" can_attach=perms_lg|has:"journal.create" %}{% include "includes/evidence.html" %}{% endwith %}</div>
+{% endblock %}

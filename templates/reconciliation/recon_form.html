@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}New reconciliation{% endblock %}
+{% block content %}<div class="page-head"><h1>New reconciliation</h1></div>
+{% if previous %}<div class="callout ok">Rolling forward from {{ previous.reference }}: opening balances are taken from its closing balances.</div>{% endif %}
+<form method="post">{% csrf_token %}{% if previous %}<input type="hidden" name="previous" value="{{ previous.pk }}">{% endif %}
+{% if form.non_field_errors %}<div class="callout bad">{{ form.non_field_errors }}</div>{% endif %}
+<div class="card"><h3>Scope</h3><div class="form-grid">{% for f in form %}{% if f.name in "name recon_type currency period_start period_end gl_account" %}<div class="field"><label for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}{{ f.errors }}<span class="helptext">{{ f.help_text }}</span></div>{% endif %}{% endfor %}</div></div>
+<div class="grid grid-2">
+<div class="card"><h3>Left side (external source, e.g. bank statement)</h3>{% for f in form %}{% if f.name|slice:":5" == "left_" or f.name == "opening_left_balance" or f.name == "closing_left_balance" %}<div class="field"><label for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}{{ f.errors }}<span class="helptext">{{ f.help_text }}</span></div>{% endif %}{% endfor %}</div>
+<div class="card"><h3>Right side (internal records, e.g. GL export)</h3>{% for f in form %}{% if f.name|slice:":6" == "right_" or f.name == "opening_right_balance" or f.name == "closing_right_balance" %}<div class="field"><label for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}{{ f.errors }}<span class="helptext">{{ f.help_text }}</span></div>{% endif %}{% endfor %}</div>
+</div>
+<div class="card"><h3>Matching rules</h3><p class="help">Leave all unchecked to use every active rule for this reconciliation type.</p><ul class="checks">{% for cb in form.rules %}<li>{{ cb }}</li>{% endfor %}</ul></div>
+<button class="btn primary">Create reconciliation</button></form>{% endblock %}

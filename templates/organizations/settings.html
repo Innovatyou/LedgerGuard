@@ -1,0 +1,3 @@
+{% extends "base.html" %}{% block title %}Institution settings{% endblock %}
+{% block content %}<div class="page-head"><div><h1>Institution settings</h1><p class="muted">{{ active_institution.get_institution_type_display }} · code {{ active_institution.code }}</p></div></div>
+<div class="card"><form method="post">{% csrf_token %}{% include "includes/form.html" %}<button class="btn primary">Save settings</button></form></div>{% endblock %}

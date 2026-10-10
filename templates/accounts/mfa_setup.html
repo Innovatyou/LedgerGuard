@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}Set up MFA{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Set up multifactor authentication</h1></div>
+<div class="card" style="max-width:640px">
+  <ol>
+    <li>Open an authenticator app (Microsoft Authenticator, Google Authenticator, FreeOTP …).</li>
+    <li>Add an account using this key: <strong class="mono">{{ secret }}</strong><br><span class="muted">or provisioning URI <span class="mono" style="word-break:break-all">{{ uri }}</span></span></li>
+    <li>Enter the 6-digit code shown by the app to confirm.</li>
+  </ol>
+  <form method="post" class="inline-form">{% csrf_token %}{{ form.code }}<button class="btn primary">Enable MFA</button></form>
+</div>
+{% endblock %}

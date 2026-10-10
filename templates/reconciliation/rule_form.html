@@ -1,0 +1,4 @@
+{% extends "base.html" %}{% block title %}Matching rule{% endblock %}
+{% block content %}<div class="page-head"><h1>Matching rule</h1></div>
+<div class="callout">Auto-accept only applies to unique, zero-difference results of deterministic strategies. Rule changes are recorded in the activity log, and every match stores a snapshot of the rule that produced it.</div>
+<div class="card"><form method="post">{% csrf_token %}{% include "includes/form.html" %}<button class="btn primary">Save rule</button></form></div>{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Branches{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Branches &amp; departments</h1>
+{% if perms_lg|has:"org.manage" %}<div class="actions"><a class="btn primary" href="{% url 'organizations:branch-create' %}">+ Branch</a><a class="btn" href="{% url 'organizations:department-create' %}">+ Department / cost centre</a></div>{% endif %}</div>
+<div class="grid grid-2">
+<div class="card table-wrap"><h3>Branches</h3><table class="data compact"><thead><tr><th>Code</th><th>Name</th><th>State</th><th>Status</th></tr></thead><tbody>
+{% for b in object_list %}<tr><td>{% if perms_lg|has:"org.manage" %}<a href="{% url 'organizations:branch-edit' b.pk %}">{{ b.code }}</a>{% else %}{{ b.code }}{% endif %}</td><td>{{ b.name }}{% if b.is_head_office %} <span class="badge">HQ</span>{% endif %}</td><td>{{ b.state }}</td><td>{% if b.is_active %}<span class="badge ok">Active</span>{% else %}<span class="badge">Inactive</span>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="4" class="muted">No branches.</td></tr>{% endfor %}</tbody></table></div>
+<div class="card table-wrap"><h3>Departments &amp; cost centres</h3><table class="data compact"><thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Branch</th></tr></thead><tbody>
+{% for d in departments %}<tr><td>{% if perms_lg|has:"org.manage" %}<a href="{% url 'organizations:department-edit' d.pk %}">{{ d.code }}</a>{% else %}{{ d.code }}{% endif %}</td><td>{{ d.name }}</td><td>{{ d.get_kind_display }}</td><td>{{ d.branch|default:"—" }}</td></tr>
+{% empty %}<tr><td colspan="4" class="muted">None.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

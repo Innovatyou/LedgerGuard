@@ -1,0 +1,48 @@
+# Local / evaluation stack. For production, use managed PostgreSQL and Redis,
+# TLS termination at a reverse proxy, and secrets from your vault.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ledgerguard
+      POSTGRES_USER: ledgerguard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledgerguard"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+
+  web: &app
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://ledgerguard:${POSTGRES_PASSWORD}@db:5432/ledgerguard
+      CACHE_URL: redis://redis:6379/1
+      CELERY_BROKER_URL: redis://redis:6379/0
+      LEDGERGUARD_MEDIA_ROOT: /var/lib/ledgerguard/media
+    volumes: [media:/var/lib/ledgerguard/media]
+    ports: ["8000:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  worker:
+    <<: *app
+    ports: []
+    command: celery -A config worker -l info
+
+  beat:
+    <<: *app
+    ports: []
+    command: celery -A config beat -l info
+
+volumes:
+  pgdata:
+  media:

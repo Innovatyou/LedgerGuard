@@ -1,0 +1,9 @@
+{% load static %}<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Sign in{% endblock %} · LedgerGuard</title><link rel="stylesheet" href="{% static 'css/ledgerguard.css' %}"></head>
+<body><div class="login-wrap"><div class="login-card">
+<div class="logo">🛡️ LedgerGuard</div>
+<p class="muted" style="margin-top:.2rem">Every Transaction Accounted For. Every Balance Verified.</p>
+{% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
+{% block content %}{% endblock %}
+<p class="muted" style="font-size:.75rem;margin-top:1.5rem">Authorised users only. All activity is recorded.</p>
+</div></div></body></html>

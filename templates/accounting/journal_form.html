@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% block title %}Journal{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{% if journal %}Edit {{ journal }}{% else %}New journal{% endif %}</h1></div>
+<form method="post">{% csrf_token %}
+<div class="card">{% include "includes/form.html" %}</div>
+<div class="card table-wrap"><h3>Lines</h3>{{ formset.management_form }}
+{% if formset.non_form_errors %}<div class="callout bad">{{ formset.non_form_errors }}</div>{% endif %}
+<table class="data compact" id="lines"><thead><tr><th style="width:32%">Account</th><th>Description</th><th style="width:13%">Debit</th><th style="width:13%">Credit</th><th style="width:16%">Department</th></tr></thead><tbody>
+{% for f in formset %}<tr><td>{{ f.account }}{{ f.account.errors }}</td><td>{{ f.description }}</td><td>{{ f.debit }}{{ f.debit.errors }}</td><td>{{ f.credit }}{{ f.credit.errors }}</td><td>{{ f.department }}</td></tr>{% endfor %}
+</tbody><tfoot><tr><td colspan="2" class="num">Totals</td><td class="num" id="tdr">0.00</td><td class="num" id="tcr">0.00</td><td id="tdiff"></td></tr></tfoot></table>
+<p class="help">Need more lines? Save the draft and edit it again – four blank lines are added each time.</p></div>
+<button class="btn primary">Save draft</button> <a class="btn" href="{% url 'accounting:journals' %}">Cancel</a>
+</form>
+<script>
+(function(){
+  function sum(sel){let t=0;document.querySelectorAll(sel).forEach(i=>{const v=parseFloat(i.value);if(!isNaN(v))t+=Math.round(v*100);});return t;}
+  function upd(){const d=sum('input[name$="-debit"]'),c=sum('input[name$="-credit"]');
+    document.getElementById('tdr').textContent=(d/100).toLocaleString(undefined,{minimumFractionDigits:2});
+    document.getElementById('tcr').textContent=(c/100).toLocaleString(undefined,{minimumFractionDigits:2});
+    const el=document.getElementById('tdiff');el.textContent=d===c?'Balanced':'Difference '+((d-c)/100).toFixed(2);el.className=d===c?'badge ok':'badge bad';}
+  document.getElementById('lines').addEventListener('input',upd);upd();
+})();
+</script>
+{% endblock %}

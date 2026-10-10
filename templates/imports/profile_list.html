@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Import profiles{% endblock %}
+{% block content %}<div class="page-head"><div><h1>Import profiles</h1><p class="muted">Reusable column mappings for each source system and file layout.</p></div>
+{% if perms_lg|has:"import.profile_manage" %}<a class="btn primary" href="{% url 'imports:profile-create' %}">+ New profile</a>{% endif %}</div>
+<div class="card table-wrap"><table class="data"><thead><tr><th>Name</th><th>Source type</th><th>Source system</th><th>Channel</th><th>Amount layout</th><th>Mapped fields</th><th>Status</th></tr></thead><tbody>
+{% for p in object_list %}<tr><td>{% if perms_lg|has:"import.profile_manage" %}<a href="{% url 'imports:profile-edit' p.pk %}">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}</td><td>{{ p.get_source_type_display }}</td><td>{{ p.source_system }}</td><td>{{ p.get_channel_display }}</td><td>{{ p.get_amount_mode_display }}</td><td>{{ p.column_mapping|length }}</td><td>{% if p.is_active %}<span class="badge ok">Active</span>{% else %}<span class="badge">Inactive</span>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="7" class="muted">No profiles yet.</td></tr>{% endfor %}</tbody></table></div>{% endblock %}

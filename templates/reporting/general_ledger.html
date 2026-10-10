@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% load lg %}{% block title %}General ledger{% endblock %}
+{% block content %}<div class="page-head"><div><h1>General ledger</h1>{% if account %}<p class="muted">{{ account }} · normal balance {{ account.get_normal_balance_display }}</p>{% endif %}</div>
+<div class="actions"><form class="inline-form" method="get"><select name="account">{% for a in accounts %}<option value="{{ a.pk }}" {% if account.pk == a.pk %}selected{% endif %}>{{ a }}</option>{% endfor %}</select>
+<input type="date" name="from" value="{{ date_from|date:'Y-m-d' }}"><input type="date" name="to" value="{{ date_to|date:'Y-m-d' }}"><button class="btn">Run</button></form>{% if gl %}{% include "includes/export.html" %}{% endif %}</div></div>
+{% if gl %}<div class="card table-wrap"><table class="data"><thead><tr><th>Date</th><th>Journal</th><th>Description</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead><tbody>
+<tr class="section"><td>{{ gl.date_from|date:"d M Y" }}</td><td></td><td>Opening balance</td><td></td><td></td><td class="num">{{ gl.opening_balance|money }}</td></tr>
+{% for l in gl.lines %}<tr><td>{{ l.entry.accounting_date|date:"d M Y" }}</td><td class="mono"><a href="{% url 'accounting:journal-detail' l.entry.journal_id %}">{{ l.entry.journal.number }}</a></td><td>{{ l.entry.journal.description|truncatechars:70 }}</td><td class="num">{% if l.entry.debit %}{{ l.entry.debit|money }}{% endif %}</td><td class="num">{% if l.entry.credit %}{{ l.entry.credit|money }}{% endif %}</td><td class="num">{{ l.running_balance|money }}</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td colspan="3">Closing balance</td><td class="num">{{ gl.total_debit|money }}</td><td class="num">{{ gl.total_credit|money }}</td><td class="num">{{ gl.closing_balance|money }}</td></tr></tfoot></table></div>
+{% else %}<div class="card muted">Select an account and period.</div>{% endif %}{% endblock %}

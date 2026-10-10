@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Journals{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Journals</h1><div class="actions">
+<form class="inline-form" method="get"><select name="status"><option value="">All statuses</option>{% for v, l in statuses %}<option value="{{ v }}" {% if request.GET.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+<input type="text" name="q" value="{{ request.GET.q }}" placeholder="Number or description"><button class="btn">Filter</button></form>
+{% if perms_lg|has:"journal.create" %}<a class="btn primary" href="{% url 'accounting:journal-create' %}">+ New journal</a>{% endif %}</div></div>
+<div class="card table-wrap"><table class="data"><thead><tr><th>Number</th><th>Accounting date</th><th>Type</th><th>Description</th><th>Prepared by</th><th>Status</th></tr></thead><tbody>
+{% for j in object_list %}<tr><td class="mono"><a href="{% url 'accounting:journal-detail' j.pk %}">{{ j }}</a></td><td>{{ j.accounting_date|date:"d M Y" }}</td><td>{{ j.get_journal_type_display }}</td><td>{{ j.description|truncatechars:70 }}</td><td>{{ j.prepared_by }}</td><td><span class="badge {{ j.status|status_class }}">{{ j.get_status_display }}</span></td></tr>
+{% empty %}<tr><td colspan="6" class="muted">No journals.</td></tr>{% endfor %}</tbody></table>{% include "includes/pagination.html" %}</div>
+{% endblock %}

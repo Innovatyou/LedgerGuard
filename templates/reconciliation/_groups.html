@@ -1,0 +1,12 @@
+{% load lg %}<table class="data compact"><thead><tr><th>#</th><th>Category</th><th>Rule / reason</th><th>Left items</th><th>Right items</th><th class="num">Left</th><th class="num">Right</th><th class="num">Difference</th><th>Decision</th><th></th></tr></thead><tbody>
+{% for g in group_page %}<tr><td>{{ g.pk }}</td><td><span class="badge {{ g.category|status_class }}">{{ g.get_category_display }}</span>{% if g.kind == 'REVERSAL' %} <span class="badge">Reversal pair</span>{% endif %}</td>
+<td>{{ g.rule_snapshot.name|default:"Manual" }}<br><span class="muted">{{ g.reason }}</span></td>
+<td>{% for i in g.items.all %}{% if i.side == 'LEFT' %}<div class="mono">{{ i.transaction.transaction_date|date:"d/m" }} {{ i.transaction.transaction_id|default:i.transaction.external_reference|truncatechars:18 }} {{ i.flow_amount|money }}</div>{% endif %}{% endfor %}</td>
+<td>{% for i in g.items.all %}{% if i.side == 'RIGHT' %}<div class="mono">{{ i.transaction.transaction_date|date:"d/m" }} {{ i.transaction.transaction_id|default:i.transaction.external_reference|truncatechars:18 }} {{ i.flow_amount|money }}</div>{% endif %}{% endfor %}</td>
+<td class="num">{{ g.left_total|money }}</td><td class="num">{{ g.right_total|money }}</td><td class="num">{% if g.difference %}<strong style="color:var(--bad)">{{ g.difference|money }}</strong>{% else %}0.00{% endif %}</td>
+<td><span class="badge {{ g.status|status_class }}">{{ g.get_status_display|truncatewords:2 }}</span>{% if g.decided_by %}<br><span class="muted">{{ g.decided_by }}</span>{% endif %}{% if g.note %}<br><span class="muted">{{ g.note }}</span>{% endif %}</td>
+<td>{% if workable and perms_lg|has:"recon.investigate" and g.status != 'REJECTED' %}<form method="post" action="{% url 'reconciliation:action' recon.pk %}">{% csrf_token %}<input type="hidden" name="group" value="{{ g.pk }}"><input type="hidden" name="tab" value="{{ tab }}">
+<input type="text" name="note" placeholder="Note{% if g.difference or g.status == 'ACCEPTED' %} (required){% endif %}">{% if g.status == 'PROPOSED' %}<button class="btn small success" name="action" value="accept">Accept</button>{% endif %}
+<button class="btn small danger" name="action" value="reject">{% if g.status == 'ACCEPTED' %}Unmatch{% else %}Reject{% endif %}</button></form>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="10" class="muted">No matches in this view.</td></tr>{% endfor %}</tbody></table>
+{% with page_obj=group_page %}{% include "includes/pagination.html" %}{% endwith %}

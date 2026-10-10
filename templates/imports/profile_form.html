@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block title %}Import profile{% endblock %}
+{% block content %}<div class="page-head"><h1>Import profile</h1></div>
+<form method="post">{% csrf_token %}
+{% if form.non_field_errors %}<div class="callout bad">{{ form.non_field_errors }}</div>{% endif %}
+<div class="card"><h3>Source</h3><div class="form-grid">
+{% for f in form %}{% if not f.name|slice:":4" == "map_" %}<div class="field">{% if f.field.widget.input_type == 'checkbox' %}<label>{{ f }} {{ f.label }}</label>{% else %}<label for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}{% endif %}{% if f.help_text %}<span class="helptext">{{ f.help_text }}</span>{% endif %}{{ f.errors }}</div>{% endif %}{% endfor %}
+</div></div>
+<div class="card"><h3>Column mapping</h3><p class="help">Enter the exact column header from the source file for each standard field you need. Unmapped fields are left blank.</p>
+<div class="form-grid">{% for f in form.mapping_fields %}<div class="field"><label for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}</div>{% endfor %}</div></div>
+<button class="btn primary">Save profile</button></form>{% endblock %}

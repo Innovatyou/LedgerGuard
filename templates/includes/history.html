@@ -1,0 +1,8 @@
+{% load lg %}<div class="card">
+  <h3>Approval history</h3>
+  {% if history %}
+  <table class="data compact"><thead><tr><th>When</th><th>Decision</th><th>By</th><th>Comment</th></tr></thead><tbody>
+  {% for h in history %}<tr><td>{{ h.timestamp|date:"d M Y H:i" }}</td><td><span class="badge {{ h.decision|status_class }}">{{ h.get_decision_display }}</span></td><td>{{ h.user }}</td><td>{{ h.comment }}</td></tr>{% endfor %}
+  </tbody></table>
+  {% else %}<p class="muted">No workflow decisions recorded yet.</p>{% endif %}
+</div>

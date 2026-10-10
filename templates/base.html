@@ -1,0 +1,89 @@
+{% load static lg %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}LedgerGuard{% endblock %} · LedgerGuard</title>
+  <link rel="stylesheet" href="{% static 'css/ledgerguard.css' %}">
+</head>
+<body>
+<div class="shell">
+  <nav class="sidebar" aria-label="Main navigation">
+    <div class="logo">🛡️ LedgerGuard</div>
+    <div class="tagline">Every Transaction Accounted For.<br>Every Balance Verified.</div>
+    <a href="{% url 'reporting:dashboard' %}">Dashboard</a>
+
+    {% if perms_lg|has:"journal.view" or perms_lg|has:"coa.view" %}
+    <div class="nav-group">Accounting</div>
+    {% if perms_lg|has:"coa.view" %}<a href="{% url 'accounting:accounts' %}">Chart of accounts</a>{% endif %}
+    {% if perms_lg|has:"journal.view" %}<a href="{% url 'accounting:journals' %}">Journals</a>
+    <a href="{% url 'accounting:periods' %}">Financial periods</a>{% endif %}
+    {% endif %}
+
+    {% if perms_lg|has:"import.view" %}
+    <div class="nav-group">Data</div>
+    <a href="{% url 'imports:batches' %}">Imports</a>
+    <a href="{% url 'imports:transactions' %}">Source transactions</a>
+    <a href="{% url 'imports:profiles' %}">Import profiles</a>
+    {% endif %}
+
+    {% if perms_lg|has:"recon.view" or perms_lg|has:"suspense.view" or perms_lg|has:"settlement.view" %}
+    <div class="nav-group">Controls</div>
+    {% if perms_lg|has:"recon.view" %}<a href="{% url 'reconciliation:list' %}">Reconciliations</a>
+    <a href="{% url 'reconciliation:rules' %}">Matching rules</a>{% endif %}
+    {% if perms_lg|has:"settlement.view" %}<a href="{% url 'settlements:dashboard' %}">Settlements</a>{% endif %}
+    {% if perms_lg|has:"suspense.view" %}<a href="{% url 'suspense:list' %}">Suspense items</a>
+    <a href="{% url 'suspense:aging' %}">Suspense aging</a>{% endif %}
+    {% endif %}
+
+    {% if perms_lg|has:"report.view" %}
+    <div class="nav-group">Reports</div>
+    <a href="{% url 'reporting:trial-balance' %}">Trial balance</a>
+    <a href="{% url 'reporting:general-ledger' %}">General ledger</a>
+    <a href="{% url 'reporting:income-statement' %}">Income statement</a>
+    <a href="{% url 'reporting:financial-position' %}">Financial position</a>
+    {% endif %}
+
+    {% if perms_lg|has:"audit.view" %}
+    <div class="nav-group">Audit</div>
+    <a href="{% url 'audit:engagements' %}">Engagements &amp; findings</a>
+    {% endif %}
+
+    {% if perms_lg|has:"users.view" or perms_lg|has:"org.manage" or perms_lg|has:"activity.view" %}
+    <div class="nav-group">Administration</div>
+    {% if perms_lg|has:"org.manage" %}<a href="{% url 'organizations:settings' %}">Institution settings</a>{% endif %}
+    <a href="{% url 'organizations:branches' %}">Branches &amp; departments</a>
+    {% if perms_lg|has:"users.view" %}<a href="{% url 'accounts:users' %}">Users</a>
+    <a href="{% url 'accounts:roles' %}">Roles &amp; permissions</a>{% endif %}
+    {% if perms_lg|has:"activity.view" %}<a href="{% url 'activity-log' %}">Activity log</a>{% endif %}
+    {% endif %}
+  </nav>
+  <div class="main">
+    <header class="topbar">
+      <div>
+        {% if available_institutions|length > 1 %}
+        <form method="post" action="{% url 'accounts:switch-institution' %}" class="inline-form">
+          {% csrf_token %}
+          <select name="institution" onchange="this.form.submit()" aria-label="Active institution">
+            {% for inst in available_institutions %}
+            <option value="{{ inst.pk }}" {% if inst.pk == active_institution.pk %}selected{% endif %}>{{ inst.name }}</option>
+            {% endfor %}
+          </select>
+        </form>
+        {% else %}<strong>{{ active_institution.name|default:"No institution" }}</strong>{% endif %}
+        <span class="muted">· {{ active_institution.get_institution_type_display }}</span>
+      </div>
+      <div class="actions">
+        <a href="{% url 'notifications:list' %}">🔔 {% if unread_notifications %}<span class="badge warn">{{ unread_notifications }}</span>{% endif %}</a>
+        <a href="{% url 'accounts:profile' %}">{{ request.user }}</a>
+        <form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}<button class="btn small" type="submit">Sign out</button></form>
+      </div>
+    </header>
+    <main class="content">
+      {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+</body>
+</html>

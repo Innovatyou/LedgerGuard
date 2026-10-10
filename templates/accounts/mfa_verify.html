@@ -1,0 +1,9 @@
+{% extends "accounts/login_base.html" %}{% block title %}Verification{% endblock %}
+{% block content %}
+<h3>Two-step verification</h3>
+<p class="muted">Enter the 6-digit code from your authenticator app.</p>
+<form method="post">{% csrf_token %}
+  <div class="field">{{ form.code }}</div>
+  <button class="btn primary" type="submit" style="width:100%;justify-content:center">Verify</button>
+</form>
+{% endblock %}

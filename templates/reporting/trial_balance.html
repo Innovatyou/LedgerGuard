@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Trial balance{% endblock %}
+{% block content %}<div class="page-head"><div><h1>Trial balance</h1><p class="muted">As at {{ as_of|date:"d F Y" }} · posted ledger entries only</p></div>
+<div class="actions"><form class="inline-form" method="get"><input type="date" name="as_of" value="{{ as_of|date:'Y-m-d' }}"><button class="btn">Run</button></form>{% include "includes/export.html" %}</div></div>
+{% if not tb.is_balanced %}<div class="callout bad">The trial balance does not balance.</div>{% endif %}
+<div class="card table-wrap"><table class="data"><thead><tr><th>Code</th><th>Account</th><th>Category</th><th class="num">Total debits</th><th class="num">Total credits</th><th class="num">Debit balance</th><th class="num">Credit balance</th></tr></thead><tbody>
+{% for r in tb.rows %}<tr><td class="mono"><a href="{% url 'reporting:general-ledger' %}?account={{ r.account.pk }}&to={{ as_of|date:'Y-m-d' }}">{{ r.account.code }}</a></td><td>{{ r.account.name }}</td><td>{{ r.account.get_category_display }}</td><td class="num">{{ r.debit_total|money }}</td><td class="num">{{ r.credit_total|money }}</td><td class="num">{% if r.balance_debit %}{{ r.balance_debit|money }}{% endif %}</td><td class="num">{% if r.balance_credit %}{{ r.balance_credit|money }}{% endif %}</td></tr>
+{% empty %}<tr><td colspan="7" class="muted">No posted entries.</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td colspan="5">Totals {% if tb.is_balanced %}<span class="badge ok">Balanced</span>{% endif %}</td><td class="num">{{ tb.total_debit|money }}</td><td class="num">{{ tb.total_credit|money }}</td></tr></tfoot></table></div>{% endblock %}

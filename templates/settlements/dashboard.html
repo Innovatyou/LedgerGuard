@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Settlements{% endblock %}
+{% block content %}<div class="page-head"><div><h1>Settlement reconciliation</h1><p class="muted">NIP, NIBSS, POS, ATM, card, interbank and processor settlement reports imported as source data.</p></div>
+<div class="actions"><form class="inline-form" method="get"><select name="channel"><option value="">All channels</option>{% for v, l in channels %}<option value="{{ v }}" {% if params.channel == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+<input type="date" name="from" value="{{ params.from }}"><input type="date" name="to" value="{{ params.to }}"><button class="btn">Filter</button></form>
+{% if perms_lg|has:"recon.rule_manage" %}<form method="post">{% csrf_token %}<button class="btn" name="action" value="install_rules">Install default settlement rules</button></form>{% endif %}</div></div>
+<div class="grid grid-4">
+<div class="kpi"><div class="label">Settlement records</div><div class="value">{{ totals.records }}</div></div>
+<div class="kpi"><div class="label">Gross</div><div class="value">{{ totals.gross|money }}</div><div class="sub">Fees {{ totals.fees|money }} · Taxes {{ totals.taxes|money }}</div></div>
+<div class="kpi"><div class="label">Net settlement</div><div class="value">{{ totals.net|money }}</div></div>
+<div class="kpi {% if totals.exceptions or totals.unmatched_batches %}alert{% endif %}"><div class="label">Exceptions</div><div class="value">{{ totals.exceptions }}</div><div class="sub">{{ totals.unmatched_batches }} batch(es) not fully matched</div></div></div>
+<div class="card table-wrap"><h3>By settlement batch</h3><table class="data compact"><thead><tr><th>Batch</th><th>Channel</th><th>Settlement date</th><th class="num">Records</th><th class="num">Reversals</th><th class="num">Gross</th><th class="num">Fees</th><th class="num">Taxes</th><th class="num">Net (reported)</th><th class="num">Net (computed)</th><th>Matched</th><th>Exceptions</th></tr></thead><tbody>
+{% for b in batches %}<tr><td class="mono">{{ b.batch_ref }}</td><td>{{ b.channel }}</td><td>{{ b.settlement_date|date:"d M Y" }}</td><td class="num">{{ b.records }}</td><td class="num">{{ b.reversals }}</td><td class="num">{{ b.gross|money }}</td><td class="num">{{ b.fees|money }}</td><td class="num">{{ b.taxes|money }}</td><td class="num">{{ b.net_reported|money }}</td><td class="num">{{ b.net_computed|money }}</td>
+<td>{% if b.fully_matched %}<span class="badge ok">Matched</span>{% else %}<span class="badge warn">{{ b.matched_records }}/{{ b.records }}</span>{% endif %}</td><td style="color:var(--bad)">{{ b.exceptions|join:"; "|truncatechars:120 }}</td></tr>
+{% empty %}<tr><td colspan="12" class="muted">No settlement records imported for this filter.</td></tr>{% endfor %}</tbody></table></div>
+<div class="card"><h3>Settlement reconciliations</h3><ul>{% for r in recons %}<li><a href="{% url 'reconciliation:detail' r.pk %}">{{ r.reference }} {{ r.name }}</a> <span class="badge {{ r.status|status_class }}">{{ r.get_status_display }}</span></li>{% empty %}<li class="muted">None yet. Create a reconciliation of type "Settlement" with the settlement report on one side and the bank settlement account on the other.</li>{% endfor %}</ul></div>
+{% endblock %}

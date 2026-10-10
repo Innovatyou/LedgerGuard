@@ -1,0 +1,103 @@
+{% extends "base.html" %}{% load lg %}{% block title %}{{ recon.reference }}{% endblock %}
+{% block content %}
+{% with workable=recon.is_workable s=statement %}
+<div class="page-head"><div><h1>{{ recon.reference }} · {{ recon.name }} <span class="badge {{ recon.status|status_class }}">{{ recon.get_status_display }}</span></h1>
+<p class="muted">{{ recon.get_recon_type_display }} · {{ recon.period_start|date:"d M Y" }} – {{ recon.period_end|date:"d M Y" }} · {{ recon.currency }} · {{ recon.left_label }} <span class="mono">{{ recon.left_account_reference }}</span> ↔ {{ recon.right_label }} <span class="mono">{{ recon.right_account_reference }}</span> · prepared by {{ recon.prepared_by }}</p></div>
+<div class="actions">
+{% if workable and perms_lg|has:"recon.run" %}<form method="post" action="{% url 'reconciliation:action' recon.pk %}">{% csrf_token %}<button class="btn primary" name="action" value="run">▶ Run matching</button></form>{% endif %}
+<a class="btn" href="{% url 'reporting:recon-statement' recon.pk %}">Statement report</a>
+{% if recon.status == 'APPROVED' or recon.status == 'CLOSED' %}<a class="btn" href="{% url 'reconciliation:create' %}?from={{ recon.pk }}">Roll forward ›</a>{% endif %}
+</div></div>
+
+<div class="grid grid-4">
+<div class="kpi"><div class="label">Matched groups</div><div class="value">{{ s.matched_groups }}</div><div class="sub">{% if recon.run_summary %}{{ recon.run_summary.auto_accepted }} auto · last run {{ recon.last_run_at|date:"d M H:i" }}{% else %}Not yet run{% endif %}</div></div>
+<div class="kpi {% if s.pending_review %}alert{% endif %}"><div class="label">Awaiting review</div><div class="value">{{ s.pending_review }}</div></div>
+<div class="kpi"><div class="label">Unmatched items</div><div class="value">{{ s.unmatched_count }}</div><div class="sub">{{ s.duplicates|length }} suspected duplicate(s)</div></div>
+<div class="kpi {% if s.final_difference %}alert{% endif %}"><div class="label">Final difference</div><div class="value">{{ s.final_difference|money }}</div><div class="sub">Tolerance {{ active_institution.reconciliation_tolerance|money }}</div></div>
+</div>
+
+{% if validation_errors %}<div class="callout {% if recon.status == 'SUBMITTED' %}bad{% endif %}"><strong>Approval blockers</strong><ul>{% for e in validation_errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+{% elif recon.last_run_at %}<div class="callout ok">All validations pass: balances agree with movements, no pending reviews, difference within tolerance.</div>{% endif %}
+
+<div class="tabs">
+<a href="?tab=exceptions" class="{% if tab == 'exceptions' %}active{% endif %}">Exceptions</a>
+<a href="?tab=review" class="{% if tab == 'review' %}active{% endif %}">Review queue ({{ s.pending_review }})</a>
+<a href="?tab=matches" class="{% if tab == 'matches' %}active{% endif %}">Matches</a>
+<a href="?tab=statement" class="{% if tab == 'statement' %}active{% endif %}">Statement</a>
+<a href="?tab=workflow" class="{% if tab == 'workflow' %}active{% endif %}">Approval</a>
+</div>
+
+{% if tab == 'exceptions' %}
+{% if workable and perms_lg|has:"recon.investigate" %}<div class="card"><h3>Manual match</h3>
+<form method="post" action="{% url 'reconciliation:action' recon.pk %}" class="inline-form" id="mm">{% csrf_token %}<input type="hidden" name="action" value="manual_match"><input type="hidden" name="tab" value="exceptions">
+<input type="text" name="left" id="mm-left" placeholder="Left IDs (comma-separated)"><input type="text" name="right" id="mm-right" placeholder="Right IDs"><input type="text" name="note" placeholder="Explanation (required)" required>
+<button class="btn primary">Match selected</button></form><p class="help">Tick items below to fill the IDs. Select items on one side only to record a reversal pair. Any difference flows into the final reconciliation difference.</p></div>{% endif %}
+<div class="grid grid-2">
+<div class="card table-wrap"><h3>{{ recon.left_label }} items not in {{ recon.right_label }}</h3>
+<h4>Unrecorded credits (inflows)</h4>{% with items=s.unrecorded_credits total=s.total_unrecorded_credits side="left" selectable=workable %}{% include "reconciliation/_txn_table.html" %}{% endwith %}
+<h4>Unrecorded charges (outflows)</h4>{% with items=s.unrecorded_charges total=s.total_unrecorded_charges side="left" selectable=workable %}{% include "reconciliation/_txn_table.html" %}{% endwith %}</div>
+<div class="card table-wrap"><h3>{{ recon.right_label }} items not in {{ recon.left_label }}</h3>
+<h4>Outstanding deposits (inflows)</h4>{% with items=s.outstanding_deposits total=s.total_outstanding_deposits side="right" selectable=workable %}{% include "reconciliation/_txn_table.html" %}{% endwith %}
+<h4>Outstanding payments (outflows)</h4>{% with items=s.outstanding_payments total=s.total_outstanding_payments side="right" selectable=workable %}{% include "reconciliation/_txn_table.html" %}{% endwith %}</div>
+</div>
+<div class="grid grid-2">
+<div class="card table-wrap"><h3>Excluded items (authorised reasons)</h3><table class="data compact"><thead><tr><th>Side</th><th>Transaction</th><th>Reason</th><th>By</th><th></th></tr></thead><tbody>
+{% for e in exclusions %}<tr><td>{{ e.get_side_display }}</td><td>{{ e.transaction }}</td><td>{{ e.reason }}</td><td>{{ e.excluded_by }}</td><td>{% if workable and perms_lg|has:"recon.investigate" %}<form method="post" action="{% url 'reconciliation:action' recon.pk %}">{% csrf_token %}<input type="hidden" name="exclusion" value="{{ e.pk }}"><button class="btn small" name="action" value="remove_exclusion">Remove</button></form>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="5" class="muted">None.</td></tr>{% endfor %}</tbody></table></div>
+<div class="card"><h3>Adjustments</h3><table class="data compact"><thead><tr><th>Side</th><th>Description</th><th>Reference</th><th class="num">Amount</th></tr></thead><tbody>
+{% for a in s.adjustments %}<tr><td>{{ a.get_side_display }}</td><td>{{ a.description }}</td><td>{{ a.reference }}</td><td class="num">{{ a.amount|money }}</td></tr>{% empty %}<tr><td colspan="4" class="muted">None.</td></tr>{% endfor %}</tbody></table>
+{% if workable and perms_lg|has:"recon.investigate" %}<form method="post" action="{% url 'reconciliation:action' recon.pk %}" class="inline-form" style="margin-top:.5rem">{% csrf_token %}<input type="hidden" name="action" value="adjust">
+<select name="side"><option value="LEFT">{{ recon.left_label }}</option><option value="RIGHT">{{ recon.right_label }}</option></select><input type="text" name="description" placeholder="Description" required><input type="text" name="reference" placeholder="Supporting reference"><input type="text" name="amount" placeholder="Amount (±)" required><button class="btn small">Add</button></form>{% endif %}</div>
+</div>
+<script>
+document.querySelectorAll('.pick-left, .pick-right').forEach(cb => cb.addEventListener('change', () => {
+  const ids = s => Array.from(document.querySelectorAll('.pick-' + s + ':checked')).map(c => c.value).join(',');
+  const l = document.getElementById('mm-left'), r = document.getElementById('mm-right');
+  if (l) { l.value = ids('left'); r.value = ids('right'); }
+}));
+</script>
+{% elif tab == 'review' %}
+<div class="card table-wrap">
+{% if workable and perms_lg|has:"recon.investigate" %}<form method="post" action="{% url 'reconciliation:action' recon.pk %}" class="inline-form" style="margin-bottom:.5rem">{% csrf_token %}<input type="hidden" name="tab" value="review"><input type="text" name="note" placeholder="Review note"><button class="btn small success" name="action" value="accept_high_confidence">Accept all zero-difference high-confidence candidates</button></form>{% endif %}
+{% include "reconciliation/_groups.html" %}</div>
+{% elif tab == 'matches' %}
+<div class="card table-wrap"><div class="tabs"><a href="?tab=matches&status=ACCEPTED" class="{% if group_status == 'ACCEPTED' %}active{% endif %}">Accepted</a><a href="?tab=matches&status=REJECTED" class="{% if group_status == 'REJECTED' %}active{% endif %}">Rejected / unmatched</a></div>
+{% include "reconciliation/_groups.html" %}</div>
+{% elif tab == 'statement' %}
+<div class="grid grid-2">
+<div class="card"><h3>{{ s.left.label }}</h3><table class="data compact"><tbody>
+<tr><td>Opening balance</td><td class="num">{{ s.left.opening|money }}</td></tr><tr><td>Add: inflows (period)</td><td class="num">{{ s.left.inflows|money }}</td></tr><tr><td>Less: outflows (period)</td><td class="num">{{ s.left.outflows|money }}</td></tr>
+<tr class="subtotal"><td>Computed closing balance</td><td class="num">{{ s.left.computed_closing|money }}</td></tr><tr><td>Reported closing balance</td><td class="num">{% if s.left.reported_closing is not None %}{{ s.left.reported_closing|money }}{% else %}<span class="muted">not provided</span>{% endif %}</td></tr>
+{% if s.left.balance_check_difference %}<tr><td style="color:var(--bad)">Balance check difference</td><td class="num" style="color:var(--bad)">{{ s.left.balance_check_difference|money }}</td></tr>{% endif %}</tbody></table></div>
+<div class="card"><h3>{{ s.right.label }}</h3><table class="data compact"><tbody>
+<tr><td>Opening balance</td><td class="num">{{ s.right.opening|money }}</td></tr><tr><td>Add: inflows (period)</td><td class="num">{{ s.right.inflows|money }}</td></tr><tr><td>Less: outflows (period)</td><td class="num">{{ s.right.outflows|money }}</td></tr>
+<tr class="subtotal"><td>Computed closing balance</td><td class="num">{{ s.right.computed_closing|money }}</td></tr><tr><td>Reported closing balance</td><td class="num">{% if s.right.reported_closing is not None %}{{ s.right.reported_closing|money }}{% else %}<span class="muted">not provided</span>{% endif %}</td></tr>
+{% if s.right.balance_check_difference %}<tr><td style="color:var(--bad)">Balance check difference</td><td class="num" style="color:var(--bad)">{{ s.right.balance_check_difference|money }}</td></tr>{% endif %}</tbody></table></div></div>
+<div class="card" style="max-width:820px"><h3>Reconciliation</h3><table class="data"><tbody>
+<tr><td>{{ s.left.label }} closing balance</td><td class="num">{{ s.left.closing|money }}</td></tr>
+<tr><td>Add: outstanding deposits ({{ s.outstanding_deposits|length }})</td><td class="num">{{ s.total_outstanding_deposits|money }}</td></tr>
+<tr><td>Less: outstanding payments ({{ s.outstanding_payments|length }})</td><td class="num">({{ s.total_outstanding_payments|money }})</td></tr>
+<tr><td>Excluded {{ s.right.label }} items</td><td class="num">{{ s.total_excluded_right|money }}</td></tr>
+<tr><td>Adjustments to {{ s.left.label }}</td><td class="num">{{ s.left_adjustments|money }}</td></tr>
+<tr class="subtotal"><td>Adjusted {{ s.left.label }} balance</td><td class="num">{{ s.adjusted_left_balance|money }}</td></tr>
+<tr><td>{{ s.right.label }} closing balance</td><td class="num">{{ s.right.closing|money }}</td></tr>
+<tr><td>Add: unrecorded credits ({{ s.unrecorded_credits|length }})</td><td class="num">{{ s.total_unrecorded_credits|money }}</td></tr>
+<tr><td>Less: unrecorded charges ({{ s.unrecorded_charges|length }})</td><td class="num">({{ s.total_unrecorded_charges|money }})</td></tr>
+<tr><td>Excluded {{ s.left.label }} items</td><td class="num">{{ s.total_excluded_left|money }}</td></tr>
+<tr><td>Adjustments to {{ s.right.label }}</td><td class="num">{{ s.right_adjustments|money }}</td></tr>
+<tr class="subtotal"><td>Adjusted {{ s.right.label }} balance</td><td class="num">{{ s.adjusted_right_balance|money }}</td></tr>
+</tbody><tfoot><tr><td>Final reconciliation difference</td><td class="num">{{ s.final_difference|money }}</td></tr></tfoot></table>
+<p class="help">Amounts are inflow-positive for each side. Matched groups: {{ s.matched_groups }} ({{ s.matched_left_total|money }} ↔ {{ s.matched_right_total|money }}); differences inside accepted matches: {{ s.match_differences|money }}.</p></div>
+{% else %}
+<div class="grid grid-2"><div class="card"><h3>Workflow</h3><dl class="facts"><dt>Status</dt><dd>{{ recon.get_status_display }}</dd><dt>Prepared by</dt><dd>{{ recon.prepared_by }}</dd><dt>Submitted</dt><dd>{{ recon.submitted_at|date:"d M Y H:i"|default:"—" }}</dd><dt>Approved by</dt><dd>{{ recon.approved_by|default:"—" }} {{ recon.approved_at|date:"d M Y H:i" }}</dd></dl>
+<form method="post" action="{% url 'reconciliation:action' recon.pk %}" style="margin-top:.75rem">{% csrf_token %}<input type="hidden" name="tab" value="workflow"><div class="field"><input type="text" name="note" placeholder="Comment / reason"></div><div class="actions">
+{% if workable and perms_lg|has:"recon.run" and recon.status != 'DRAFT' %}<button class="btn primary" name="action" value="submit">Submit for approval</button>{% endif %}
+{% if recon.status == 'SUBMITTED' and perms_lg|has:"recon.approve" %}<button class="btn success" name="action" value="approve">Approve</button><button class="btn danger" name="action" value="return">Return to preparer</button>{% endif %}
+{% if recon.status == 'APPROVED' and perms_lg|has:"recon.approve" %}<button class="btn" name="action" value="close">Close</button>{% endif %}
+{% if recon.status == 'APPROVED' or recon.status == 'CLOSED' %}{% if perms_lg|has:"recon.reopen" %}<button class="btn danger" name="action" value="reopen">Reopen (reason required)</button>{% endif %}{% endif %}
+</div></form></div>
+{% include "includes/history.html" %}</div>
+{% with obj=recon label="reconciliation" can_attach=perms_lg|has:"recon.investigate" %}{% include "includes/evidence.html" %}{% endwith %}
+{% endif %}
+{% endwith %}
+{% endblock %}

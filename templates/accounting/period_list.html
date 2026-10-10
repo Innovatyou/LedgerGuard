@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Financial periods{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Financial periods</h1></div>
+{% if perms_lg|has:"period.manage" %}<div class="grid grid-2">
+<div class="card"><h3>Generate a financial year</h3><form method="post" class="inline-form">{% csrf_token %}<input type="hidden" name="action" value="generate">
+<input type="number" name="year" value="{% now 'Y' %}" min="2000" max="2100"><button class="btn primary">Generate 12 monthly periods</button></form>
+<p class="help">Financial year starts in month {{ active_institution.financial_year_start_month }}.</p></div>
+<div class="card"><h3>Add a period</h3><form method="post">{% csrf_token %}<input type="hidden" name="action" value="create">{% include "includes/form.html" %}<button class="btn">Add period</button></form></div></div>{% endif %}
+<div class="card table-wrap"><table class="data"><thead><tr><th>Period</th><th>From</th><th>To</th><th>Status</th><th>Closed</th><th>Reopened</th><th></th></tr></thead><tbody>
+{% for p in object_list %}<tr><td>{{ p.name }}{% if p.is_year_end %} <span class="badge">Year end</span>{% endif %}</td><td>{{ p.start_date|date:"d M Y" }}</td><td>{{ p.end_date|date:"d M Y" }}</td>
+<td><span class="badge {% if p.status == 'OPEN' %}ok{% else %}neutral{% endif %}">{{ p.get_status_display }}</span></td>
+<td class="muted">{% if p.closed_at %}{{ p.closed_by }} · {{ p.closed_at|date:"d M Y" }}{% endif %}</td>
+<td class="muted">{% if p.reopened_at %}{{ p.reopened_by }} · {{ p.reopened_at|date:"d M Y" }} – {{ p.reopen_reason }}{% endif %}</td>
+<td>{% if p.status == 'OPEN' and perms_lg|has:"period.close" %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="close"><input type="hidden" name="period" value="{{ p.pk }}"><button class="btn small">Close</button></form>
+{% elif p.status == 'CLOSED' and perms_lg|has:"period.reopen" %}<form method="post" class="inline-form">{% csrf_token %}<input type="hidden" name="action" value="reopen"><input type="hidden" name="period" value="{{ p.pk }}"><input type="text" name="reason" placeholder="Reason (required)" required><button class="btn small danger">Reopen</button></form>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="7" class="muted">No periods defined. Journals cannot be posted until a period exists.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

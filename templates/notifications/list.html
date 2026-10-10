@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block title %}Notifications{% endblock %}
+{% block content %}<div class="page-head"><h1>Notifications</h1></div>
+<div class="card table-wrap"><table class="data"><tbody>
+{% for n in object_list %}<tr><td>{% if not n.read_at %}<span class="badge warn">New</span>{% endif %}</td><td><strong>{{ n.title }}</strong><br><span class="muted">{{ n.message }}</span></td><td class="muted">{{ n.created_at|date:"d M Y H:i" }}</td>
+<td><form method="post" action="{% url 'notifications:read' n.pk %}">{% csrf_token %}<button class="btn small">Open</button></form></td></tr>
+{% empty %}<tr><td class="muted">No notifications.</td></tr>{% endfor %}</tbody></table>{% include "includes/pagination.html" %}</div>{% endblock %}

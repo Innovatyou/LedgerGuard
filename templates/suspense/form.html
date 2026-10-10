@@ -1,0 +1,3 @@
+{% extends "base.html" %}{% block title %}New suspense item{% endblock %}
+{% block content %}<div class="page-head"><h1>New suspense item</h1></div>
+<div class="card"><form method="post">{% csrf_token %}{% include "includes/form.html" %}<button class="btn primary">Create</button></form></div>{% endblock %}

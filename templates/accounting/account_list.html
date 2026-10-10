@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Chart of accounts{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Chart of accounts</h1><p class="muted">{{ object_list|length }} account(s)</p></div>
+<div class="actions"><form class="inline-form" method="get"><input type="text" name="q" value="{{ request.GET.q }}" placeholder="Search code or name"><button class="btn">Search</button></form>
+{% if perms_lg|has:"coa.manage" %}<a class="btn primary" href="{% url 'accounting:account-create' %}">+ New account</a>{% endif %}</div></div>
+{% if perms_lg|has:"coa.manage" and not object_list %}
+<div class="card"><h3>Start from a template</h3><p class="callout">{{ template_warning }}</p>
+<form method="post" action="{% url 'accounting:apply-template' %}" class="inline-form">{% csrf_token %}
+<select name="template">{% for k, v in templates.items %}<option value="{{ k }}" {% if k == active_institution.institution_type %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+<button class="btn primary">Create accounts from template</button></form></div>{% endif %}
+<div class="card table-wrap"><table class="data compact"><thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Subcategory</th><th>Type</th><th>Normal</th><th>Flags</th><th>Status</th></tr></thead><tbody>
+{% for a in object_list %}<tr>
+<td class="mono">{% if perms_lg|has:"coa.manage" %}<a href="{% url 'accounting:account-edit' a.pk %}">{{ a.code }}</a>{% else %}{{ a.code }}{% endif %}</td>
+<td style="padding-left:{{ a.depth|default:0 }}em">{% if a.account_type == "HEADER" %}<strong>{{ a.name }}</strong>{% else %}{{ a.name }}{% endif %}</td>
+<td>{{ a.get_category_display }}</td><td class="muted">{{ a.get_subcategory_display }}</td><td>{{ a.get_account_type_display|truncatewords:1 }}</td><td>{{ a.get_normal_balance_display }}</td>
+<td>{% if a.reconciliation_required %}<span class="badge">Recon</span>{% endif %}{% if a.is_control_account %} <span class="badge">Control</span>{% endif %}{% if a.is_suspense_account %} <span class="badge warn">Suspense</span>{% endif %}</td>
+<td>{% if a.is_active %}<span class="badge ok">Active</span>{% else %}<span class="badge">Inactive</span>{% endif %}</td></tr>
+{% endfor %}</tbody></table></div>
+{% endblock %}

@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Roles{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Roles &amp; permissions</h1><p class="muted">Permissions are evaluated per action and per institution.</p></div>
+{% if perms_lg|has:"users.manage" %}<a class="btn primary" href="{% url 'accounts:role-create' %}">+ Custom role</a>{% endif %}</div>
+{% for role in object_list %}<div class="card"><details><summary>{{ role.name }} {% if role.is_system %}<span class="badge">System</span>{% else %}<span class="badge ok">Custom</span>{% endif %} <span class="muted">· {{ role.permissions|length }} permission(s)</span></summary>
+<p class="muted">{{ role.description }}</p><p class="mono">{{ role.permissions|join:", " }}</p></details></div>{% endfor %}
+{% endblock %}

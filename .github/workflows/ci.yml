@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ledgerguard
+          POSTGRES_USER: ledgerguard
+          POSTGRES_PASSWORD: ledgerguard
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ledgerguard" --health-interval 5s --health-retries 10
+    env:
+      DJANGO_SECRET_KEY: ci-only-not-secret
+      DATABASE_URL: postgres://ledgerguard:ledgerguard@localhost:5432/ledgerguard
+      CELERY_TASK_ALWAYS_EAGER: "True"
+      DJANGO_SECURE_COOKIES: "False"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py check --deploy --fail-level ERROR
+        env:
+          DJANGO_ALLOWED_HOSTS: ledgerguard.example.ng
+      - run: pytest --create-db

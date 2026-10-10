@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Audit{% endblock %}
+{% block content %}<div class="page-head"><h1>Audit engagements</h1>{% if perms_lg|has:"audit.manage" %}<a class="btn primary" href="{% url 'audit:engagement-create' %}">+ New engagement</a>{% endif %}</div>
+<div class="card table-wrap"><table class="data"><thead><tr><th>Reference</th><th>Title</th><th>Type</th><th>Audit period</th><th>Lead</th><th>Status</th></tr></thead><tbody>
+{% for e in object_list %}<tr><td class="mono"><a href="{% url 'audit:engagement' e.pk %}">{{ e.reference }}</a></td><td>{{ e.title }}</td><td>{{ e.get_kind_display }}</td><td>{{ e.period_start|date:"d M Y" }} – {{ e.period_end|date:"d M Y" }}</td><td>{{ e.lead }}</td><td><span class="badge">{{ e.get_status_display }}</span></td></tr>
+{% empty %}<tr><td colspan="6" class="muted">No engagements.</td></tr>{% endfor %}</tbody></table></div>
+<div class="grid grid-2"><div class="card table-wrap"><h3>Open findings</h3><table class="data compact"><thead><tr><th>Ref</th><th>Title</th><th>Rating</th><th>Owner</th><th>Status</th></tr></thead><tbody>
+{% for f in open_findings %}<tr><td class="mono"><a href="{% url 'audit:finding' f.pk %}">{{ f.reference }}</a></td><td>{{ f.title }}</td><td><span class="badge {{ f.rating|status_class }}">{{ f.get_rating_display }}</span></td><td>{{ f.owner|default:"—" }}</td><td>{{ f.get_status_display|truncatewords:3 }}</td></tr>{% empty %}<tr><td colspan="5" class="muted">None.</td></tr>{% endfor %}</tbody></table></div>
+<div class="card table-wrap"><h3>Overdue corrective actions</h3><table class="data compact"><thead><tr><th>Finding</th><th>Action</th><th>Owner</th><th>Due</th></tr></thead><tbody>
+{% for a in overdue_actions %}<tr><td><a href="{% url 'audit:finding' a.finding.pk %}">{{ a.finding.reference }}</a></td><td>{{ a.description|truncatechars:60 }}</td><td>{{ a.owner }}</td><td style="color:var(--bad)">{{ a.due_date|date:"d M Y" }}</td></tr>{% empty %}<tr><td colspan="4" class="muted">None.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

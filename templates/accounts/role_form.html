@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% block title %}New role{% endblock %}
+{% block content %}<div class="page-head"><h1>New custom role</h1></div>
+<div class="card"><form method="post">{% csrf_token %}
+{% if form.non_field_errors %}<div class="callout bad">{{ form.non_field_errors }}</div>{% endif %}
+<div class="form-grid"><div class="field"><label>Code</label>{{ form.code }}{{ form.code.errors }}</div><div class="field"><label>Name</label>{{ form.name }}{{ form.name.errors }}</div></div>
+<div class="field"><label>Description</label>{{ form.description }}</div>
+<div class="field"><label>Permissions</label><ul class="checks">{% for cb in form.permissions %}<li>{{ cb }}</li>{% endfor %}</ul></div>
+<button class="btn primary">Create role</button></form></div>{% endblock %}

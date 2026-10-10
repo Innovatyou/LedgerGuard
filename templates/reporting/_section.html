@@ -1,0 +1,4 @@
+{% load lg %}<tr class="section"><td colspan="2">{{ section.title }}</td></tr>
+{% for group, total, items in section.group_totals %}<tr><td colspan="2"><strong>{{ group }}</strong></td></tr>
+{% for account, amount in items %}<tr><td style="padding-left:1.5em">{{ account.code }} {{ account.name }}</td><td class="num">{{ amount|money }}</td></tr>{% endfor %}
+<tr class="subtotal"><td style="padding-left:.75em">Total {{ group }}</td><td class="num">{{ total|money }}</td></tr>{% endfor %}

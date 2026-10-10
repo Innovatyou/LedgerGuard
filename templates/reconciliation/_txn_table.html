@@ -1,0 +1,8 @@
+{% load lg %}<table class="data compact"><thead><tr>{% if selectable %}<th></th>{% endif %}<th>ID</th><th>Date</th><th>Reference</th><th>Narration</th><th class="num">Amount</th><th></th></tr></thead><tbody>
+{% for t, flow in items %}<tr>{% if selectable %}<td><input type="checkbox" class="pick-{{ side }}" value="{{ t.pk }}"></td>{% endif %}<td>{{ t.pk }}</td><td class="nowrap">{{ t.transaction_date|date:"d M Y" }}</td><td class="mono">{{ t.transaction_id|default:t.external_reference }}</td><td>{{ t.narration|truncatechars:48 }}{% if t.is_suspected_duplicate %} <span class="badge warn">Suspected duplicate</span>{% endif %}</td><td class="num">{{ flow|money }}</td>
+<td>{% if workable and perms_lg|has:"recon.investigate" %}<details><summary class="btn small">Act</summary>
+<form method="post" action="{% url 'reconciliation:action' recon.pk %}" class="inline-form">{% csrf_token %}<input type="hidden" name="txn" value="{{ t.pk }}"><input type="text" name="note" placeholder="Reason (required)" required>
+<button class="btn small" name="action" value="exclude">Exclude</button>
+{% if suspense_accounts and perms_lg|has:"suspense.manage" %}<select name="account">{% for a in suspense_accounts %}<option value="{{ a.pk }}">{{ a }}</option>{% endfor %}</select><button class="btn small" name="action" value="to_suspense">Raise suspense item</button>{% endif %}</form></details>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="7" class="muted">None.</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td colspan="{% if selectable %}5{% else %}4{% endif %}">Total ({{ items|length }})</td><td class="num">{{ total|money }}</td><td></td></tr></tfoot></table>

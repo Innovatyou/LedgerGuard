@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Income statement{% endblock %}
+{% block content %}<div class="page-head"><div><h1>Income statement</h1><p class="muted">{{ date_from|date:"d M Y" }} to {{ date_to|date:"d M Y" }}</p></div>
+<div class="actions"><form class="inline-form" method="get"><input type="date" name="from" value="{{ date_from|date:'Y-m-d' }}"><input type="date" name="to" value="{{ date_to|date:'Y-m-d' }}"><button class="btn">Run</button></form>{% include "includes/export.html" %}</div></div>
+<div class="card table-wrap" style="max-width:900px"><table class="data"><tbody>
+{% with section=stmt.income %}{% include "reporting/_section.html" %}{% endwith %}<tr class="subtotal"><td>TOTAL INCOME</td><td class="num">{{ stmt.income.total|money }}</td></tr>
+{% with section=stmt.expenses %}{% include "reporting/_section.html" %}{% endwith %}<tr class="subtotal"><td>TOTAL EXPENSES</td><td class="num">{{ stmt.expenses.total|money }}</td></tr>
+</tbody><tfoot><tr><td>Net profit / (loss)</td><td class="num">{{ stmt.net_profit|money }}</td></tr></tfoot></table></div>{% endblock %}

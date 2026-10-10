@@ -1,0 +1,4 @@
+{% extends "base.html" %}{% block title %}Upload source file{% endblock %}
+{% block content %}<div class="page-head"><h1>Upload source file</h1></div>
+<div class="card" style="max-width:720px"><form method="post" enctype="multipart/form-data">{% csrf_token %}{% include "includes/form.html" %}<button class="btn primary">Upload &amp; preview</button></form>
+<p class="help">The original file and its SHA-256 checksum are retained according to the institution's retention policy. Re-uploading a file that was already committed is rejected.</p></div>{% endblock %}

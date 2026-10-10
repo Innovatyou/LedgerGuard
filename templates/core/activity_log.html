@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block title %}Activity log{% endblock %}
+{% block content %}<div class="page-head"><div><h1>Activity log</h1><p class="muted">Append-only record of user and system actions.</p></div>
+<form class="inline-form" method="get"><input type="text" name="action" placeholder="Action contains…" value="{{ request.GET.action }}"><button class="btn">Filter</button></form></div>
+<div class="card table-wrap"><table class="data compact"><thead><tr><th>When</th><th>User</th><th>Action</th><th>Object</th><th>Details</th><th>IP</th></tr></thead><tbody>
+{% for e in object_list %}<tr><td class="mono">{{ e.timestamp|date:"Y-m-d H:i:s" }}</td><td>{{ e.user|default:"system" }}</td><td class="mono">{{ e.action }}</td><td>{{ e.object_type }} {{ e.object_repr }}</td><td class="mono" style="max-width:420px;word-break:break-all">{% if e.details %}{{ e.details }}{% endif %}</td><td class="mono">{{ e.ip_address|default:"" }}</td></tr>
+{% empty %}<tr><td colspan="6" class="muted">No activity.</td></tr>{% endfor %}</tbody></table>{% include "includes/pagination.html" %}</div>{% endblock %}

@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Matching rules{% endblock %}
+{% block content %}<div class="page-head"><div><h1>Matching rules</h1><p class="muted">Rules run in priority order. Fuzzy and amount-only matches always require manual review.</p></div>
+{% if perms_lg|has:"recon.rule_manage" %}<a class="btn primary" href="{% url 'reconciliation:rule-create' %}">+ New rule</a>{% endif %}</div>
+<div class="card table-wrap"><table class="data"><thead><tr><th>Priority</th><th>Name</th><th>Strategy</th><th>Applies to</th><th>Keys</th><th>Date tol.</th><th>Amount tol.</th><th>Auto-accept</th><th>Status</th></tr></thead><tbody>
+{% for r in object_list %}<tr><td>{{ r.priority }}</td><td>{% if perms_lg|has:"recon.rule_manage" %}<a href="{% url 'reconciliation:rule-edit' r.pk %}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</td><td>{{ r.get_strategy_display }}</td><td>{{ r.get_recon_type_display|default:"All" }}</td>
+<td class="mono">{% if r.strategy == 'COMPOSITE' %}{{ r.composite_fields|join:", " }}{% else %}{{ r.left_reference_field }} ↔ {{ r.right_reference_field }}{% endif %}</td><td>{{ r.date_tolerance_days }}d</td><td class="num">{{ r.amount_tolerance|money }}</td><td>{% if r.auto_accept %}<span class="badge ok">Yes</span>{% else %}No{% endif %}</td><td>{% if r.is_active %}<span class="badge ok">Active</span>{% else %}<span class="badge">Off</span>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="9" class="muted">No rules defined. Create rules before running reconciliations.</td></tr>{% endfor %}</tbody></table></div>{% endblock %}

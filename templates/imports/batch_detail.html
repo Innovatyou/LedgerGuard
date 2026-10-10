@@ -1,0 +1,40 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Batch #{{ batch.pk }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Import batch #{{ batch.pk }} <span class="badge {{ batch.status|status_class }}">{{ batch.get_status_display }}</span></h1>
+<p class="muted">{{ batch.original_filename }} · {{ batch.size|filesizeformat }} · profile {{ batch.profile }} · sha256 <span class="mono">{{ batch.sha256|truncatechars:20 }}</span></p></div>
+{% if perms_lg|has:"import.upload" and batch.status != 'COMMITTED' and batch.status != 'CANCELLED' %}<div class="actions">
+<form method="post" action="{% url 'imports:batch-action' batch.pk %}">{% csrf_token %}<button class="btn primary" name="action" value="validate">{% if batch.status == 'VALIDATED' %}Re-validate{% else %}Validate{% endif %}</button></form>
+{% if batch.status == 'VALIDATED' %}<form method="post" action="{% url 'imports:batch-action' batch.pk %}" class="inline-form">{% csrf_token %}<input type="hidden" name="action" value="commit">
+{% if batch.invalid_rows %}<label style="font-weight:400"><input type="checkbox" name="allow_partial" value="1"> Commit valid rows only ({{ batch.invalid_rows }} invalid row(s) will not be imported)</label>{% endif %}
+<button class="btn success">Commit {{ batch.valid_rows }} row(s)</button></form>{% endif %}
+<form method="post" action="{% url 'imports:batch-action' batch.pk %}" class="inline-form">{% csrf_token %}<input type="hidden" name="action" value="cancel"><input type="text" name="reason" placeholder="Reason" required><button class="btn danger">Cancel batch</button></form>
+</div>{% endif %}</div>
+{% if batch.error_message %}<div class="callout bad">{{ batch.error_message }}</div>{% endif %}
+<div class="grid grid-4">
+<div class="kpi"><div class="label">Rows</div><div class="value">{{ batch.total_rows }}</div></div>
+<div class="kpi"><div class="label">Valid</div><div class="value">{{ batch.valid_rows }}</div><div class="sub">{{ batch.warning_rows }} with warnings</div></div>
+<div class="kpi {% if batch.invalid_rows %}alert{% endif %}"><div class="label">Invalid</div><div class="value">{{ batch.invalid_rows }}</div></div>
+<div class="kpi"><div class="label">Already imported</div><div class="value">{{ batch.duplicate_rows }}</div><div class="sub">Committed: {{ batch.committed_rows }}</div></div>
+</div>
+{% if preview_rows %}<div class="card table-wrap"><h3>Preview (first {{ preview_rows|length }} of {{ preview_total }} rows)</h3>
+{% if missing_columns %}<div class="callout bad">Mapped columns missing from file: {{ missing_columns|join:", " }}. Edit the profile or upload the correct file.</div>{% endif %}
+{% if unmapped_headers %}<p class="help">Unmapped columns (ignored): {{ unmapped_headers|join:", " }}</p>{% endif %}
+<table class="data compact"><thead><tr><th>Row</th>{% for h in preview_headers %}<th>{{ h }}</th>{% endfor %}</tr></thead><tbody>
+{% for n, r in preview_rows %}<tr><td>{{ n }}</td>{% for h in preview_headers %}<td>{{ r|get_item:h|default_if_none:"" }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
+{% if preview_error %}<div class="callout bad">{{ preview_error }}</div>{% endif %}
+{% if row_page.object_list %}<div class="card table-wrap"><div class="page-head"><h3>Rows</h3>
+<form method="get" class="inline-form"><select name="status" onchange="this.form.submit()"><option value="">All</option>{% for v, l in row_statuses %}<option value="{{ v }}" {% if row_status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></form></div>
+<table class="data compact"><thead><tr><th>Row</th><th>Status</th><th>Date</th><th>Account</th><th>Reference</th><th>Narration</th><th class="num">Debit</th><th class="num">Credit</th><th>Issues</th><th></th></tr></thead><tbody>
+{% for r in row_page %}<tr><td>{{ r.row_number }}</td><td><span class="badge {{ r.status|status_class }}">{{ r.get_status_display|truncatewords:3 }}</span></td>
+<td>{{ r.normalized.transaction_date|default:"" }}</td><td>{{ r.normalized.account_reference }}</td><td class="mono">{{ r.normalized.transaction_id|default:r.normalized.external_reference }}</td><td>{{ r.normalized.narration|truncatechars:40 }}</td>
+<td class="num">{% if r.normalized.debit_amount and r.normalized.debit_amount != "0.00" %}{{ r.normalized.debit_amount|money }}{% endif %}</td><td class="num">{% if r.normalized.credit_amount and r.normalized.credit_amount != "0.00" %}{{ r.normalized.credit_amount|money }}{% endif %}</td>
+<td style="color:var(--bad)">{{ r.errors|join:"; " }}<span class="muted">{{ r.warnings|join:"; " }}</span>{% if r.correction_note %}<br><span class="muted">Note: {{ r.correction_note }}</span>{% endif %}</td>
+<td>{% if batch.status == 'VALIDATED' and perms_lg|has:"import.upload" and r.status != 'COMMITTED' %}
+<details><summary class="btn small">Fix</summary><form method="post" action="{% url 'imports:batch-action' batch.pk %}" style="min-width:300px">{% csrf_token %}<input type="hidden" name="row" value="{{ r.pk }}">
+{% for k, v in r.raw.items %}<label>{{ k }}</label><input type="text" name="col:{{ k }}" value="{{ v|default_if_none:'' }}">{% endfor %}
+<input type="text" name="note" placeholder="Correction note (required)"><button class="btn small primary" name="action" value="correct">Save correction</button></form>
+<form method="post" action="{% url 'imports:batch-action' batch.pk %}">{% csrf_token %}<input type="hidden" name="row" value="{{ r.pk }}">
+{% if r.status == 'EXCLUDED' %}<button class="btn small" name="action" value="include">Include</button>{% else %}<input type="text" name="reason" placeholder="Exclusion reason"><button class="btn small danger" name="action" value="exclude">Exclude</button>{% endif %}</form></details>{% endif %}</td></tr>{% endfor %}
+</tbody></table>
+{% with page_obj=row_page %}{% include "includes/pagination.html" %}{% endwith %}</div>{% endif %}
+{% endblock %}

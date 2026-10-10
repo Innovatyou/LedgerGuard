@@ -1,0 +1,5 @@
+{% if can_export %}<div class="actions">
+<a class="btn small" href="?{{ request.GET.urlencode }}&export=xlsx">⬇ Excel</a>
+<a class="btn small" href="?{{ request.GET.urlencode }}&export=csv">⬇ CSV</a>
+<a class="btn small" href="?{{ request.GET.urlencode }}&export=pdf">⬇ PDF</a>
+</div>{% endif %}

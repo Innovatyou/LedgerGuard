@@ -1,0 +1,12 @@
+{% load lg %}{% evidence_for obj label as files %}
+<div class="card">
+  <h3>Supporting evidence</h3>
+  {% if files %}<ul>{% for f in files %}<li><a href="{% url 'evidence-download' f.pk %}">{{ f.original_name }}</a> <span class="muted">{{ f.description }} · {{ f.uploaded_by }} · {{ f.created_at|date:"d M Y" }} · sha256 <span class="mono">{{ f.sha256|truncatechars:14 }}</span></span></li>{% endfor %}</ul>
+  {% else %}<p class="muted">No evidence attached.</p>{% endif %}
+  {% if can_attach %}
+  <form method="post" enctype="multipart/form-data" action="{% url 'evidence-upload' label obj.pk %}" class="inline-form">
+    {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <input type="file" name="file" required><input type="text" name="description" placeholder="Description">
+    <button class="btn small" type="submit">Attach</button>
+  </form>{% endif %}
+</div>

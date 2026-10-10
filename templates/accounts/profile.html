@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% block title %}My profile{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ request.user.get_full_name|default:request.user.username }}</h1></div>
+<div class="grid grid-2">
+<div class="card"><h3>Account</h3>
+<dl class="facts"><dt>Username</dt><dd>{{ request.user.username }}</dd><dt>Email</dt><dd>{{ request.user.email }}</dd>
+<dt>Job title</dt><dd>{{ request.user.job_title }}</dd>
+<dt>MFA</dt><dd>{% if request.user.mfa_enabled %}<span class="badge ok">Enabled</span>{% else %}<span class="badge warn">Not enabled</span> <a href="{% url 'accounts:mfa-setup' %}">Set up</a>{% endif %}</dd>
+<dt>Permissions here</dt><dd>{{ perms_lg|length }} action(s) in {{ active_institution }}</dd></dl>
+</div>
+<div class="card"><h3>API access token</h3>
+<p class="muted">Use with the header <span class="mono">Authorization: Token &lt;token&gt;</span> and <span class="mono">X-Institution: &lt;id&gt;</span>. Generating a new token revokes the previous one.</p>
+{% if token %}<p class="mono" style="word-break:break-all">{{ token.key }}</p>{% endif %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="token"><button class="btn">Generate new token</button></form>
+</div></div>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Statement of financial position{% endblock %}
+{% block content %}<div class="page-head"><div><h1>Statement of financial position</h1><p class="muted">As at {{ as_of|date:"d F Y" }}</p></div>
+<div class="actions"><form class="inline-form" method="get"><input type="date" name="as_of" value="{{ as_of|date:'Y-m-d' }}"><button class="btn">Run</button></form>{% include "includes/export.html" %}</div></div>
+{% if fp.is_balanced %}<div class="callout ok">Assets equal liabilities plus equity.</div>{% else %}<div class="callout bad">Out of balance by {{ fp.difference|money }}.</div>{% endif %}
+<div class="card table-wrap" style="max-width:900px"><table class="data"><tbody>
+{% with section=fp.assets %}{% include "reporting/_section.html" %}{% endwith %}<tr class="subtotal"><td>TOTAL ASSETS</td><td class="num">{{ fp.assets.total|money }}</td></tr>
+{% with section=fp.liabilities %}{% include "reporting/_section.html" %}{% endwith %}<tr class="subtotal"><td>TOTAL LIABILITIES</td><td class="num">{{ fp.liabilities.total|money }}</td></tr>
+{% with section=fp.equity %}{% include "reporting/_section.html" %}{% endwith %}
+<tr><td>Current earnings not yet closed to retained earnings</td><td class="num">{{ fp.unclosed_earnings|money }}</td></tr><tr class="subtotal"><td>TOTAL EQUITY</td><td class="num">{{ fp.total_equity|money }}</td></tr>
+</tbody><tfoot><tr><td>Total liabilities and equity</td><td class="num">{{ fp.total_liabilities_and_equity|money }}</td></tr></tfoot></table></div>{% endblock %}

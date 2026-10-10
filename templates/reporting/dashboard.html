@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Financial control dashboard</h1><p class="muted">{{ active_institution }} · {{ today|date:"l, d F Y" }}</p></div></div>
+<div class="grid grid-4">
+<a class="kpi {% if journals_pending %}alert{% endif %}" href="{% url 'accounting:journals' %}?status=SUBMITTED"><div class="label">Journals awaiting approval</div><div class="value">{{ journals_pending }}</div><div class="sub">{{ journals_approved_unposted }} approved, not posted · {{ journals_posted_month }} posted this month</div></a>
+<a class="kpi {% if pending_matches %}alert{% endif %}" href="{% url 'reconciliation:list' %}"><div class="label">Matches awaiting review</div><div class="value">{{ pending_matches }}</div><div class="sub">{{ recon_status.SUBMITTED }} reconciliation(s) awaiting approval</div></a>
+<a class="kpi {% if unreconciled_count %}alert{% endif %}" href="{% url 'reconciliation:list' %}"><div class="label">Accounts not reconciled (35 days)</div><div class="value">{{ unreconciled_count }}</div><div class="sub">of accounts flagged "reconciliation required"</div></a>
+<a class="kpi" href="{% url 'suspense:list' %}"><div class="label">Open suspense</div><div class="value">{{ suspense_total|money }}</div><div class="sub">{{ suspense_count }} item(s) · {{ suspense_pending_approval }} pending approval</div></a>
+</div>
+<div class="grid grid-2" style="margin-top:1rem">
+<div class="card"><h3>Suspense aging</h3><table class="data compact"><tbody>
+{% for label, count, total in aging %}<tr><td style="width:30%">{{ label }}</td><td style="width:40%"><div class="bar"><span style="width:{{ total|pct:aging_max }}%"></span></div></td><td class="num">{{ count }}</td><td class="num">{{ total|money }}</td></tr>{% endfor %}
+</tbody></table></div>
+<div class="card"><h3>Reconciliation status</h3><table class="data compact"><tbody>
+<tr><td>Draft / in review</td><td class="num">{{ recon_status.DRAFT|add:recon_status.IN_REVIEW }}</td></tr>
+<tr><td>Submitted</td><td class="num">{{ recon_status.SUBMITTED }}</td></tr><tr><td>Approved</td><td class="num">{{ recon_status.APPROVED }}</td></tr><tr><td>Closed</td><td class="num">{{ recon_status.CLOSED }}</td></tr><tr><td>Reopened</td><td class="num">{{ recon_status.REOPENED }}</td></tr></tbody></table>
+{% if recons_awaiting_approval %}<h3>Awaiting approval</h3><ul>{% for r in recons_awaiting_approval %}<li><a href="{% url 'reconciliation:detail' r.pk %}">{{ r.reference }} {{ r.name }}</a></li>{% endfor %}</ul>{% endif %}
+{% if unreconciled_accounts %}<h3>Not recently reconciled</h3><ul>{% for a in unreconciled_accounts %}<li>{{ a }}</li>{% endfor %}</ul>{% endif %}</div>
+</div>
+<div class="grid grid-3">
+{% if income_statement %}<div class="card"><h3>Year to date</h3><dl class="facts"><dt>Income</dt><dd class="num">{{ income_statement.income.total|money }}</dd><dt>Expenses</dt><dd class="num">{{ income_statement.expenses.total|money }}</dd><dt><strong>Net profit</strong></dt><dd class="num"><strong>{{ income_statement.net_profit|money }}</strong></dd></dl>
+<p class="help">From {{ income_statement.date_from|date:"d M Y" }} · <a href="{% url 'reporting:income-statement' %}">Full statement</a></p></div>
+<div class="card"><h3>Trial balance</h3>{% if tb.is_balanced %}<p><span class="badge ok">Balanced</span></p>{% else %}<p><span class="badge bad">Out of balance</span></p>{% endif %}<dl class="facts"><dt>Debits</dt><dd class="num">{{ tb.total_debit|money }}</dd><dt>Credits</dt><dd class="num">{{ tb.total_credit|money }}</dd></dl><p class="help"><a href="{% url 'reporting:trial-balance' %}">View trial balance</a></p></div>{% endif %}
+<div class="card"><h3>Pipeline</h3><dl class="facts"><dt>Imports awaiting commit</dt><dd>{{ imports_awaiting }}</dd><dt>Open audit findings</dt><dd>{{ open_findings }}</dd><dt>Overdue corrective actions</dt><dd>{% if overdue_actions %}<span class="badge bad">{{ overdue_actions }}</span>{% else %}0{% endif %}</dd></dl></div>
+</div>
+{% if recent_activity %}<div class="card table-wrap"><h3>Recent activity</h3><table class="data compact"><tbody>{% for e in recent_activity %}<tr><td class="mono">{{ e.timestamp|date:"d M H:i" }}</td><td>{{ e.user|default:"system" }}</td><td class="mono">{{ e.action }}</td><td>{{ e.object_repr }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+{% endblock %}

@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% load lg %}{% block title %}{{ table.title }}{% endblock %}
+{% block content %}<div class="page-head"><div><h1>{{ table.title }}</h1><p class="muted">{{ table.subtitle }}</p></div>{% include "includes/export.html" %}</div>
+<div class="card table-wrap"><table class="data compact"><thead><tr>{% for c in table.columns %}<th {% if c.kind == 'money' %}class="num"{% endif %}>{{ c.title }}</th>{% endfor %}</tr></thead><tbody>
+{% for row in table.rows %}<tr>{% for v in row %}<td>{% if v is None %}{% elif v.quantize %}<span class="num" style="display:block">{{ v|money }}</span>{% elif v.isoformat %}{{ v|date:"d M Y" }}{% else %}{{ v }}{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
+{% if table.totals %}<tfoot><tr>{% for v in table.totals %}<td>{% if v is None %}{% elif v.quantize %}<span class="num" style="display:block">{{ v|money }}</span>{% else %}{{ v }}{% endif %}</td>{% endfor %}</tr></tfoot>{% endif %}</table>
+{% for n in table.notes %}<p class="help">{{ n }}</p>{% endfor %}</div>{% endblock %}
