@@ -53,6 +53,23 @@ PERMISSIONS = {
     "report.export": "Export reports",
     "activity.view": "View activity (audit trail) logs",
     "integration.manage": "Configure integrations",
+    # Configuration control
+    "config.approve": "Approve chart-of-accounts and matching-rule changes",
+    "journal.recurring_manage": "Create and maintain recurring journal templates",
+    # Fixed assets
+    "asset.view": "View the fixed-asset register",
+    "asset.manage": "Add and maintain fixed assets",
+    "asset.depreciate": "Prepare depreciation runs",
+    "asset.dispose": "Prepare asset disposals",
+    # Loans and deposits portfolio controls
+    "portfolio.view": "View loan and deposit control schedules",
+    "portfolio.manage": "Upload portfolio snapshots and configure classification",
+    # Regulatory workpapers
+    "regulatory.view": "View regulatory workpapers",
+    "regulatory.manage": "Configure templates and prepare regulatory workpapers",
+    "regulatory.review": "Review and sign off regulatory workpapers",
+    # Integrations
+    "integration.view": "View integration endpoints and logs",
 }
 
 ALL = set(PERMISSIONS)
@@ -220,6 +237,40 @@ DEFAULT_ROLES = {
         {"report.view", "recon.view", "suspense.view", "settlement.view"},
     ),
 }
+
+
+# Permissions added after the initial role design, granted on top of the sets above.
+_ADDITIONS = {
+    "institution_admin": {"integration.view"},
+    "cfo": {"config.approve", "asset.dispose", "regulatory.review", "portfolio.manage"},
+    "finance_manager": {
+        "config.approve",
+        "journal.recurring_manage",
+        "asset.manage",
+        "asset.depreciate",
+        "asset.dispose",
+        "portfolio.manage",
+        "regulatory.manage",
+        "regulatory.review",
+    },
+    "accountant": {
+        "asset.view",
+        "asset.manage",
+        "asset.depreciate",
+        "portfolio.view",
+        "regulatory.view",
+        "regulatory.manage",
+    },
+    "recon_officer": {"portfolio.view"},
+    "recon_reviewer": {"config.approve", "portfolio.view"},
+    "external_auditor": {"asset.view", "portfolio.view", "regulatory.view"},
+    "compliance_officer": {"asset.view", "portfolio.view", "regulatory.view", "regulatory.review"},
+    "branch_manager": {"asset.view", "portfolio.view"},
+}
+for _code, _extra in _ADDITIONS.items():
+    _name, _perms = DEFAULT_ROLES[_code]
+    DEFAULT_ROLES[_code] = (_name, set(_perms) | _extra)
+DEFAULT_ROLES["super_admin"] = ("Super Administrator", set(ALL))
 
 
 def validate_codes(codes):

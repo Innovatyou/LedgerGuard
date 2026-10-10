@@ -52,12 +52,19 @@ INSTALLED_APPS = [
     "apps.settlements",
     "apps.suspense",
     "apps.audit",
+    "apps.fixed_assets",
+    "apps.loans",
+    "apps.deposits",
+    "apps.regulatory",
+    "apps.integrations",
+    "apps.administration",
     "apps.reporting",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "apps.core.middleware.RequestContextMiddleware",
+    "apps.core.middleware.SecurityHeadersMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -174,6 +181,13 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULE = {
+    "scheduled-jobs-hourly": {"task": "apps.administration.tasks.scheduled_jobs", "schedule": 60 * 60},
+    "integrity-checks-daily": {"task": "apps.administration.tasks.integrity_checks", "schedule": 60 * 60 * 24},
+    "backup-nightly": {"task": "apps.administration.tasks.nightly_backup", "schedule": 60 * 60 * 24},
+    "recurring-journals-daily": {
+        "task": "apps.accounting.tasks.generate_recurring_journals",
+        "schedule": 60 * 60 * 6,
+    },
     "suspense-escalations-daily": {
         "task": "apps.suspense.tasks.run_escalations",
         "schedule": 60 * 60 * 24,
@@ -187,6 +201,9 @@ LEDGERGUARD = {
     "LOGIN_MAX_FAILURES": env("LEDGERGUARD_LOGIN_MAX_FAILURES"),
     "LOGIN_LOCKOUT_SECONDS": env("LEDGERGUARD_LOGIN_LOCKOUT_SECONDS"),
     "MAX_IMPORT_ROWS": env.int("LEDGERGUARD_MAX_IMPORT_ROWS", default=500_000),
+    "INGEST_ROOT": env("LEDGERGUARD_INGEST_ROOT", default=str(BASE_DIR / "ingest")),
+    "BACKUP_DIR": env("LEDGERGUARD_BACKUP_DIR", default=str(BASE_DIR / "backups")),
+    "BACKUP_RETENTION_DAYS": env.int("LEDGERGUARD_BACKUP_RETENTION_DAYS", default=35),
 }
 
 # --- Logging --------------------------------------------------------------

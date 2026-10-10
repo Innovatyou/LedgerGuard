@@ -112,3 +112,14 @@ JournalLineFormSet = forms.formset_factory(JournalLineForm, extra=4, can_delete=
 
 class ReasonForm(forms.Form):
     reason = forms.CharField(widget=forms.Textarea(attrs={"rows": 2}))
+
+
+class RecurringJournalForm(forms.Form):
+    name = forms.CharField(max_length=150)
+    description = forms.CharField(max_length=500)
+    frequency = forms.ChoiceField(
+        choices=[("MONTHLY", "Monthly"), ("QUARTERLY", "Quarterly"), ("ANNUALLY", "Annually")]
+    )
+    day_of_month = forms.IntegerField(min_value=1, max_value=31, initial=28)
+    start_date = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    end_date = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))

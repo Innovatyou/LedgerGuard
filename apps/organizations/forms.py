@@ -18,6 +18,7 @@ class InstitutionSettingsForm(forms.ModelForm):
             "backdate_limit_days",
             "reconciliation_tolerance",
             "require_independent_approval",
+            "require_config_approval",
             "require_mfa",
             "document_retention_years",
         ]

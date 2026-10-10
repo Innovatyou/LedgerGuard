@@ -362,3 +362,48 @@ class LedgerEntry(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Ledger entries cannot be deleted; post a reversal instead.")
+
+
+class RecurringJournal(InstitutionScopedModel):
+    """
+    Template that generates a journal on a schedule (e.g. monthly rent accrual).
+    Templates are activated only after independent approval; generated journals
+    still go through normal approval and posting.
+    """
+
+    class Frequency(models.TextChoices):
+        MONTHLY = "MONTHLY", "Monthly"
+        QUARTERLY = "QUARTERLY", "Quarterly"
+        ANNUALLY = "ANNUALLY", "Annually"
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Awaiting approval"
+        ACTIVE = "ACTIVE", "Active"
+        PAUSED = "PAUSED", "Paused"
+        ENDED = "ENDED", "Ended"
+
+    name = models.CharField(max_length=150)
+    description = models.CharField(max_length=500)
+    journal_type = models.CharField(max_length=20, choices=JournalType.choices, default=JournalType.ACCRUAL)
+    currency = models.CharField(max_length=3)
+    branch = models.ForeignKey("organizations.Branch", null=True, blank=True, on_delete=models.PROTECT)
+    lines = models.JSONField(help_text='[{"account": id, "debit": "0.00", "credit": "0.00", "description": ""}]')
+    frequency = models.CharField(max_length=10, choices=Frequency.choices, default=Frequency.MONTHLY)
+    day_of_month = models.PositiveSmallIntegerField(default=28)
+    start_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)
+    next_run_date = models.DateField()
+    last_run_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name

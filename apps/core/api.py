@@ -4,7 +4,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.services import has_perm
+from apps.accounts.services import branch_scope, has_perm
 
 from .exceptions import BusinessRuleError
 from .tenancy import resolve_api_institution
@@ -27,6 +27,12 @@ class InstitutionContextMixin:
         code = self.permission_map.get(getattr(self, "action", None) or request.method.lower(), self.default_permission)
         if code and not has_perm(request.user, self.institution, code):
             raise PermissionDenied(f"Permission required: {code}")
+
+    @property
+    def branch_scope(self):
+        if not hasattr(self, "_branch_scope"):
+            self._branch_scope = branch_scope(self.request.user, self.institution)
+        return self._branch_scope
 
     def handle_exception(self, exc):
         if isinstance(exc, BusinessRuleError):

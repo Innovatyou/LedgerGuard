@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Deposit control{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Deposit control totals</h1><p class="muted">Compare the core-banking deposit listing with the GL deposit control accounts by product.</p></div></div>
+<div class="grid grid-2">
+{% if perms_lg|has:"portfolio.manage" %}<div class="card"><h3>Upload deposit listing</h3><form method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="upload">
+<div class="field"><label>Listing date *</label><input type="date" name="as_of" required></div><div class="field"><label>File (.csv / .xlsx) *</label><input type="file" name="file" required></div><button class="btn primary">Load listing</button></form>
+<p class="help">Required columns: account number, product, balance (credit positive). Optional: customer, branch code, accrued interest, dormant flag.</p></div>{% endif %}
+<div class="card table-wrap"><h3>Product → GL mapping</h3><table class="data compact"><thead><tr><th>Product</th><th>Name</th><th>GL account</th></tr></thead><tbody>
+{% for p in products %}<tr><td class="mono">{{ p.code }}</td><td>{{ p.name }}</td><td>{{ p.gl_account }}</td></tr>{% empty %}<tr><td colspan="3" class="muted">No mappings.</td></tr>{% endfor %}</tbody></table>
+{% if perms_lg|has:"portfolio.manage" %}<form method="post" class="inline-form" style="margin-top:.5rem">{% csrf_token %}<input type="hidden" name="action" value="product"><input type="text" name="code" placeholder="Product code" required><input type="text" name="name" placeholder="Name" required><select name="gl_account">{% for a in accounts %}<option value="{{ a.pk }}">{{ a }}</option>{% endfor %}</select><select name="interest_payable_account"><option value="">Interest payable (optional)</option>{% for a in accounts %}<option value="{{ a.pk }}">{{ a }}</option>{% endfor %}</select><button class="btn small">Add mapping</button></form>{% endif %}</div></div>
+<div class="card table-wrap"><h3>Listings</h3><table class="data compact"><thead><tr><th>As at</th><th>File</th><th>Uploaded by</th><th>Status</th></tr></thead><tbody>
+{% for s in snapshots %}<tr><td><a href="{% url 'deposits:snapshot' s.pk %}">{{ s.as_of|date:"d M Y" }}</a></td><td>{{ s.source_file }}</td><td>{{ s.uploaded_by }}</td><td><span class="badge {% if s.status == 'REVIEWED' %}ok{% endif %}">{{ s.get_status_display }}</span></td></tr>{% empty %}<tr><td colspan="4" class="muted">None.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

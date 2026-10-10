@@ -17,6 +17,7 @@
     <div class="nav-group">Accounting</div>
     {% if perms_lg|has:"coa.view" %}<a href="{% url 'accounting:accounts' %}">Chart of accounts</a>{% endif %}
     {% if perms_lg|has:"journal.view" %}<a href="{% url 'accounting:journals' %}">Journals</a>
+    <a href="{% url 'accounting:recurring' %}">Recurring journals</a>
     <a href="{% url 'accounting:periods' %}">Financial periods</a>{% endif %}
     {% endif %}
 
@@ -36,6 +37,14 @@
     <a href="{% url 'suspense:aging' %}">Suspense aging</a>{% endif %}
     {% endif %}
 
+    {% if perms_lg|has:"asset.view" or perms_lg|has:"portfolio.view" or perms_lg|has:"regulatory.view" %}
+    <div class="nav-group">Portfolio &amp; regulatory</div>
+    {% if perms_lg|has:"asset.view" %}<a href="{% url 'fixed_assets:register' %}">Fixed assets</a>{% endif %}
+    {% if perms_lg|has:"portfolio.view" %}<a href="{% url 'loans:index' %}">Loan portfolio</a>
+    <a href="{% url 'deposits:index' %}">Deposit control</a>{% endif %}
+    {% if perms_lg|has:"regulatory.view" %}<a href="{% url 'regulatory:index' %}">Regulatory workpapers</a>{% endif %}
+    {% endif %}
+
     {% if perms_lg|has:"report.view" %}
     <div class="nav-group">Reports</div>
     <a href="{% url 'reporting:trial-balance' %}">Trial balance</a>
@@ -49,13 +58,16 @@
     <a href="{% url 'audit:engagements' %}">Engagements &amp; findings</a>
     {% endif %}
 
-    {% if perms_lg|has:"users.view" or perms_lg|has:"org.manage" or perms_lg|has:"activity.view" %}
+    {% if perms_lg|has:"users.view" or perms_lg|has:"org.manage" or perms_lg|has:"activity.view" or perms_lg|has:"config.approve" or perms_lg|has:"integration.view" %}
     <div class="nav-group">Administration</div>
     {% if perms_lg|has:"org.manage" %}<a href="{% url 'organizations:settings' %}">Institution settings</a>{% endif %}
+    {% if perms_lg|has:"config.approve" or perms_lg|has:"coa.manage" or perms_lg|has:"org.manage" %}<a href="{% url 'approvals:changes' %}">Configuration changes</a>{% endif %}
     <a href="{% url 'organizations:branches' %}">Branches &amp; departments</a>
     {% if perms_lg|has:"users.view" %}<a href="{% url 'accounts:users' %}">Users</a>
     <a href="{% url 'accounts:roles' %}">Roles &amp; permissions</a>{% endif %}
+    {% if perms_lg|has:"integration.view" %}<a href="{% url 'integrations:index' %}">Integrations</a>{% endif %}
     {% if perms_lg|has:"activity.view" %}<a href="{% url 'activity-log' %}">Activity log</a>{% endif %}
+    {% if request.user.is_superuser %}<a href="{% url 'administration:system' %}">System operations</a>{% endif %}
     {% endif %}
   </nav>
   <div class="main">
@@ -64,7 +76,7 @@
         {% if available_institutions|length > 1 %}
         <form method="post" action="{% url 'accounts:switch-institution' %}" class="inline-form">
           {% csrf_token %}
-          <select name="institution" onchange="this.form.submit()" aria-label="Active institution">
+          <select name="institution" data-autosubmit aria-label="Active institution">
             {% for inst in available_institutions %}
             <option value="{{ inst.pk }}" {% if inst.pk == active_institution.pk %}selected{% endif %}>{{ inst.name }}</option>
             {% endfor %}
@@ -85,5 +97,6 @@
     </main>
   </div>
 </div>
+<script src="{% static 'js/ledgerguard.js' %}" defer></script>
 </body>
 </html>

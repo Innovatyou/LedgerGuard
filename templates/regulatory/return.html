@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% load lg %}{% block title %}{{ ret }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ ret.template.code }} · {{ ret.period_end|date:"d M Y" }} <span class="badge {% if ret.status == 'REVIEWED' %}ok{% else %}warn{% endif %}">{{ ret.get_status_display }}</span></h1>
+<p class="muted">{{ ret.template.name }} · period {{ ret.period_start|date:"d M Y" }} – {{ ret.period_end|date:"d M Y" }} · generated {{ ret.generated_at|date:"d M Y H:i" }} by {{ ret.prepared_by }}{% if ret.reviewed_by %} · signed off by {{ ret.reviewed_by }}{% endif %}</p></div>{% include "includes/export.html" %}</div>
+<div class="card"><h3>Validation</h3>{% for r in ret.validation_results %}<p>{% if r.passed %}<span class="badge ok">Pass</span>{% else %}<span class="badge bad">Fail</span>{% endif %} {{ r.rule }} <span class="mono">{{ r.expression }}</span> {% if r.difference %}· difference {{ r.difference }}{% endif %} {{ r.detail }}</p>{% empty %}<p class="muted">No rules defined.</p>{% endfor %}</div>
+<div class="card table-wrap"><table class="data"><tbody>
+{% for line, value in lines %}<tr {% if line.kind == 'HEADING' %}class="section"{% elif line.is_total %}class="subtotal"{% endif %}><td class="mono">{{ line.code }}</td><td>{{ line.label }}</td><td class="num">{% if line.kind != 'HEADING' %}{{ value|money }}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+{% if ret.notes %}<div class="card"><h3>Notes</h3><p>{{ ret.notes|linebreaksbr }}</p></div>{% endif %}
+{% if ret.status != 'REVIEWED' %}<div class="grid grid-2">
+{% if perms_lg|has:"regulatory.manage" %}<div class="card"><h3>Regenerate</h3><form method="post">{% csrf_token %}{% for l in manual_lines %}<div class="field"><label>{{ l.code }} {{ l.label }} (manual)</label><input type="text" name="manual_{{ l.code }}" value="{{ ret.manual_values|get_item:l.code|default:'0' }}"></div>{% endfor %}<button class="btn">Recalculate from ledger</button></form></div>{% endif %}
+{% if perms_lg|has:"regulatory.review" and ret.prepared_by != request.user %}<div class="card"><h3>Review</h3><form method="post">{% csrf_token %}<input type="hidden" name="action" value="review"><div class="field"><input type="text" name="comment" placeholder="Review comment{% if not ret.passed %} (required){% endif %}"></div><button class="btn success">Sign off</button></form></div>{% endif %}</div>{% endif %}
+{% endblock %}

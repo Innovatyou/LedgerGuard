@@ -2,7 +2,9 @@ from django.contrib import messages
 from django.shortcuts import redirect, render
 from django.views.generic import ListView, View
 
+from apps.approvals.changes import request_change, requires_approval
 from apps.core.activity import log_activity
+from apps.core.exceptions import BusinessRuleError
 from apps.core.views_mixins import InstitutionRequiredMixin, scoped_get
 
 from .forms import BranchForm, DepartmentForm, InstitutionSettingsForm
@@ -20,7 +22,22 @@ class InstitutionSettingsView(InstitutionRequiredMixin, View):
     def post(self, request):
         before = InstitutionSettingsForm(instance=self.institution).initial
         form = InstitutionSettingsForm(request.POST, instance=self.institution)
-        if form.is_valid():
+        if form.is_valid() and requires_approval(self.institution):
+            try:
+                cr = request_change(
+                    self.institution,
+                    request.user,
+                    "institution_settings",
+                    form.cleaned_data,
+                    target_obj=self.institution,
+                    summary="Change institution settings",
+                )
+            except BusinessRuleError as exc:
+                form.add_error(None, exc.message)
+            else:
+                messages.success(request, f"Change {cr.reference} submitted for independent approval.")
+                return redirect("approvals:changes")
+        elif form.is_valid():
             form.save()
             changes = {k: [str(before.get(k)), str(form.cleaned_data[k])] for k in form.changed_data}
             log_activity(

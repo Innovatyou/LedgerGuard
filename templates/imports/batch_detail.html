@@ -23,7 +23,7 @@
 {% for n, r in preview_rows %}<tr><td>{{ n }}</td>{% for h in preview_headers %}<td>{{ r|get_item:h|default_if_none:"" }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
 {% if preview_error %}<div class="callout bad">{{ preview_error }}</div>{% endif %}
 {% if row_page.object_list %}<div class="card table-wrap"><div class="page-head"><h3>Rows</h3>
-<form method="get" class="inline-form"><select name="status" onchange="this.form.submit()"><option value="">All</option>{% for v, l in row_statuses %}<option value="{{ v }}" {% if row_status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></form></div>
+<form method="get" class="inline-form"><select name="status" data-autosubmit><option value="">All</option>{% for v, l in row_statuses %}<option value="{{ v }}" {% if row_status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></form></div>
 <table class="data compact"><thead><tr><th>Row</th><th>Status</th><th>Date</th><th>Account</th><th>Reference</th><th>Narration</th><th class="num">Debit</th><th class="num">Credit</th><th>Issues</th><th></th></tr></thead><tbody>
 {% for r in row_page %}<tr><td>{{ r.row_number }}</td><td><span class="badge {{ r.status|status_class }}">{{ r.get_status_display|truncatewords:3 }}</span></td>
 <td>{{ r.normalized.transaction_date|default:"" }}</td><td>{{ r.normalized.account_reference }}</td><td class="mono">{{ r.normalized.transaction_id|default:r.normalized.external_reference }}</td><td>{{ r.normalized.narration|truncatechars:40 }}</td>

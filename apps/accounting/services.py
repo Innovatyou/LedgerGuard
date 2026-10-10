@@ -11,11 +11,11 @@ from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.utils import timezone
 
-from apps.accounts.services import has_perm, require_perm
+from apps.accounts.services import branch_scope, has_perm, require_perm
 from apps.approvals.models import ApprovalRecord
 from apps.approvals.services import assert_independent, record_decision
 from apps.core.activity import log_activity
-from apps.core.exceptions import BusinessRuleError, TenantViolationError
+from apps.core.exceptions import BusinessRuleError, PermissionDeniedError, TenantViolationError
 from apps.core.money import quantize
 from apps.core.sequences import next_number
 
@@ -99,6 +99,7 @@ def create_journal(
             )
             _validate_currency(journal)
             _replace_lines(journal, lines)
+            assert_branch_access(user, journal)
     except IntegrityError:
         if idempotency_key:
             return Journal.objects.get(institution=institution, idempotency_key=idempotency_key)
@@ -134,6 +135,7 @@ def update_journal(journal: Journal, user, *, lines=None, **fields) -> Journal:
         journal.save()
         if lines is not None:
             _replace_lines(journal, lines)
+        assert_branch_access(user, journal)
     log_activity("journal.updated", user=user, obj=journal)
     return journal
 
@@ -234,13 +236,30 @@ def period_for(institution, day: date, *, lock=False) -> FinancialPeriod | None:
 # --------------------------------------------------------------------------
 
 
-def _locked(journal) -> Journal:
-    return Journal.objects.select_for_update().select_related("institution").get(pk=journal.pk)
+def assert_branch_access(user, journal: Journal):
+    """
+    Users whose membership is limited to particular branches may only prepare,
+    approve, post or reverse journals for those branches (header and lines).
+    """
+    scope = branch_scope(user, journal.institution)
+    if scope is None:
+        return
+    branches = {journal.branch_id} | set(journal.lines.values_list("branch_id", flat=True).distinct())
+    branches = {b for b in branches if b is not None} or {None}
+    if not branches <= scope:
+        raise PermissionDeniedError("This journal involves a branch outside your access scope.")
+
+
+def _locked(journal, user=None) -> Journal:
+    locked = Journal.objects.select_for_update().select_related("institution").get(pk=journal.pk)
+    if user is not None:
+        assert_branch_access(user, locked)
+    return locked
 
 
 def submit_journal(journal: Journal, user, comment="") -> Journal:
     with transaction.atomic():
-        journal = _locked(journal)
+        journal = _locked(journal, user)
         require_perm(user, journal.institution, "journal.create")
         if journal.status not in Journal.EDITABLE_STATUSES:
             raise BusinessRuleError("Only draft or rejected journals can be submitted.")
@@ -267,7 +286,7 @@ def submit_journal(journal: Journal, user, comment="") -> Journal:
 
 def approve_journal(journal: Journal, user, comment="") -> Journal:
     with transaction.atomic():
-        journal = _locked(journal)
+        journal = _locked(journal, user)
         require_perm(user, journal.institution, "journal.approve")
         if journal.status != Journal.Status.SUBMITTED:
             raise BusinessRuleError("Only submitted journals can be approved.")
@@ -285,7 +304,7 @@ def reject_journal(journal: Journal, user, reason: str) -> Journal:
     if not reason or not reason.strip():
         raise BusinessRuleError("A rejection reason is required.")
     with transaction.atomic():
-        journal = _locked(journal)
+        journal = _locked(journal, user)
         require_perm(user, journal.institution, "journal.approve")
         if journal.status not in (Journal.Status.SUBMITTED, Journal.Status.APPROVED):
             raise BusinessRuleError("Only submitted or approved (unposted) journals can be rejected.")
@@ -310,7 +329,7 @@ def post_journal(journal: Journal, user, comment="") -> Journal:
     impossible at database level as well.
     """
     with transaction.atomic():
-        journal = _locked(journal)
+        journal = _locked(journal, user)
         institution = journal.institution
         require_perm(user, institution, "journal.post")
         if journal.status in (Journal.Status.POSTED, Journal.Status.REVERSED):
@@ -379,7 +398,7 @@ def request_reversal(journal: Journal, user, reason: str, reversal_date: date | 
     if not reason or not reason.strip():
         raise BusinessRuleError("A reversal reason is required.")
     with transaction.atomic():
-        original = _locked(journal)
+        original = _locked(journal, user)
         institution = original.institution
         require_perm(user, institution, "journal.reverse")
         if original.status != Journal.Status.POSTED:

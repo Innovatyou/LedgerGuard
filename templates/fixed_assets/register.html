@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Fixed-asset register{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Fixed-asset register</h1><p class="muted">As at {{ as_of|date:"d M Y" }} · depreciation counted only when its journal is posted</p></div>
+<div class="actions"><form class="inline-form" method="get"><input type="date" name="as_of" value="{{ as_of|date:'Y-m-d' }}"><select name="status" data-autosubmit><option value="">All</option>{% for v, l in statuses %}<option value="{{ v }}" {% if status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select><button class="btn">Run</button></form>
+<a class="btn" href="{% url 'fixed_assets:depreciation' %}">Depreciation runs</a>
+{% if perms_lg|has:"asset.manage" %}<a class="btn" href="{% url 'fixed_assets:category-create' %}">+ Category</a><a class="btn primary" href="{% url 'fixed_assets:create' %}">+ Asset</a>{% endif %}</div></div>
+<div class="grid grid-3"><div class="kpi"><div class="label">Cost (in use)</div><div class="value">{{ totals.cost|money }}</div></div>
+<div class="kpi"><div class="label">Accumulated depreciation</div><div class="value">{{ totals.accumulated|money }}</div></div>
+<div class="kpi"><div class="label">Net book value</div><div class="value">{{ totals.nbv|money }}</div></div></div>
+{% if controls %}<div class="card table-wrap" style="margin-top:1rem"><h3>Register vs general ledger</h3><table class="data compact"><thead><tr><th>Categories</th><th>Cost account</th><th class="num">Register cost</th><th class="num">GL cost</th><th class="num">Difference</th><th class="num">Register acc. dep.</th><th class="num">GL acc. dep.</th><th class="num">Difference</th><th></th></tr></thead><tbody>
+{% for c in controls %}<tr><td>{{ c.label }}</td><td>{{ c.cost_account }}</td><td class="num">{{ c.register_cost|money }}</td><td class="num">{{ c.gl_cost|money }}</td><td class="num">{{ c.cost_difference|money }}</td><td class="num">{{ c.register_accumulated|money }}</td><td class="num">{{ c.gl_accumulated|money }}</td><td class="num">{{ c.accumulated_difference|money }}</td><td>{% if c.reconciled %}<span class="badge ok">Agrees</span>{% else %}<span class="badge bad">Difference</span>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="9" class="muted">No asset categories.</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+<div class="card table-wrap"><table class="data compact"><thead><tr><th>Tag</th><th>Asset</th><th>Category</th><th>Branch</th><th>In service</th><th class="num">Cost</th><th class="num">Acc. dep.</th><th class="num">NBV</th><th>Status</th></tr></thead><tbody>
+{% for a, acc, nbv in rows %}<tr><td class="mono"><a href="{% url 'fixed_assets:detail' a.pk %}">{{ a.tag }}</a></td><td>{{ a.name }}</td><td>{{ a.category.name }}</td><td>{{ a.branch|default:"—" }}</td><td class="nowrap">{{ a.in_service_date|date:"d M Y" }}</td><td class="num">{{ a.cost|money }}</td><td class="num">{{ acc|money }}</td><td class="num">{{ nbv|money }}</td><td><span class="badge {% if a.status == 'ACTIVE' %}ok{% elif a.status == 'DISPOSAL_PENDING' %}warn{% endif %}">{{ a.get_status_display }}</span></td></tr>
+{% empty %}<tr><td colspan="9" class="muted">No assets.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

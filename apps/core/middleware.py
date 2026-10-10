@@ -39,3 +39,25 @@ class RequestContextMiddleware:
         response["X-Request-ID"] = request_id
         response["X-Response-Time-ms"] = f"{(time.monotonic() - started) * 1000:.0f}"
         return response
+
+
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; "
+    "frame-ancestors 'none'"
+)
+
+
+class SecurityHeadersMiddleware:
+    """Content-Security-Policy and related headers. Scripts are only loaded from the application's own origin."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        response.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+        response.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+        if request.path.startswith(("/accounts/", "/api/")) or response.get("Content-Disposition"):
+            response.setdefault("Cache-Control", "no-store")
+        return response

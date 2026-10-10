@@ -2,19 +2,25 @@ from datetime import date
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.generic import DetailView, ListView, View
 
+from apps.approvals.changes import request_change, requires_approval
 from apps.approvals.services import history_for
 from apps.core.activity import log_activity
 from apps.core.exceptions import BusinessRuleError
 from apps.core.views_mixins import InstitutionRequiredMixin, run_action, scoped_get
 
-from . import services
+from . import recurring, services
 from .coa_templates import TEMPLATE_WARNING, TEMPLATES, apply_template
-from .forms import AccountForm, JournalForm, JournalLineFormSet, PeriodForm
-from .models import Account, FinancialPeriod, Journal
+from .forms import AccountForm, JournalForm, JournalLineFormSet, PeriodForm, RecurringJournalForm
+from .models import Account, FinancialPeriod, Journal, RecurringJournal
+
+
+def scope_journals(qs, scope):
+    """Limit journals to those whose header branch is within the user's branch scope."""
+    return qs if scope is None else qs.filter(branch_id__in=scope)
 
 
 def _parse_date(value):
@@ -60,7 +66,22 @@ class AccountEditView(InstitutionRequiredMixin, View):
     def post(self, request, pk=None):
         account = scoped_get(request, Account, pk=pk) if pk else None
         form = AccountForm(request.POST, instance=account, institution=self.institution)
-        if form.is_valid():
+        if form.is_valid() and requires_approval(self.institution):
+            try:
+                cr = request_change(
+                    self.institution,
+                    request.user,
+                    "account",
+                    form.cleaned_data,
+                    target_obj=account,
+                    summary=f"{'Edit' if account else 'Create'} account {form.cleaned_data['code']}",
+                )
+            except BusinessRuleError as exc:
+                form.add_error(None, exc.message)
+            else:
+                messages.success(request, f"Change {cr.reference} submitted for independent approval.")
+                return redirect("approvals:changes")
+        elif form.is_valid():
             obj = form.save(commit=False)
             if not pk:
                 obj.created_by = request.user
@@ -83,6 +104,9 @@ class ApplyTemplateView(InstitutionRequiredMixin, View):
         key = request.POST.get("template")
         if key not in TEMPLATES:
             messages.error(request, "Unknown template.")
+            return redirect("accounting:accounts")
+        if requires_approval(self.institution) and Account.objects.filter(institution=self.institution).exists():
+            messages.error(request, "Templates can only seed an empty chart while configuration approval is required.")
             return redirect("accounting:accounts")
         created = apply_template(self.institution, request.user, key)
         messages.success(request, f"{created} account(s) created. {TEMPLATE_WARNING}")
@@ -149,7 +173,9 @@ class JournalListView(InstitutionRequiredMixin, ListView):
     paginate_by = 50
 
     def get_queryset(self):
-        qs = Journal.objects.filter(institution=self.institution).select_related("prepared_by", "period")
+        qs = scope_journals(Journal.objects.filter(institution=self.institution), self.branch_scope).select_related(
+            "prepared_by", "period"
+        )
         status = self.request.GET.get("status")
         if status:
             qs = qs.filter(status=status)
@@ -184,14 +210,21 @@ def _lines_from_formset(formset):
     return lines
 
 
-class JournalEditView(InstitutionRequiredMixin, View):
+class JournalScopeMixin:
+    def _journal(self, pk):
+        return get_object_or_404(
+            scope_journals(Journal.objects.filter(institution=self.institution), self.branch_scope), pk=pk
+        )
+
+
+class JournalEditView(JournalScopeMixin, InstitutionRequiredMixin, View):
     permission_required = "journal.create"
 
     def _render(self, request, form, formset, journal=None):
         return render(request, "accounting/journal_form.html", {"form": form, "formset": formset, "journal": journal})
 
     def get(self, request, pk=None):
-        journal = scoped_get(request, Journal, pk=pk) if pk else None
+        journal = self._journal(pk) if pk else None
         if journal and not journal.is_editable:
             messages.error(request, "This journal can no longer be edited.")
             return redirect("accounting:journal-detail", pk=journal.pk)
@@ -212,7 +245,7 @@ class JournalEditView(InstitutionRequiredMixin, View):
         return self._render(request, form, formset, journal)
 
     def post(self, request, pk=None):
-        journal = scoped_get(request, Journal, pk=pk) if pk else None
+        journal = self._journal(pk) if pk else None
         form = JournalForm(request.POST, instance=journal, institution=self.institution)
         formset = JournalLineFormSet(request.POST, form_kwargs={"institution": self.institution})
         if form.is_valid() and formset.is_valid():
@@ -238,7 +271,7 @@ class JournalDetailView(InstitutionRequiredMixin, DetailView):
     context_object_name = "journal"
 
     def get_queryset(self):
-        return Journal.objects.filter(institution=self.institution).select_related(
+        return scope_journals(Journal.objects.filter(institution=self.institution), self.branch_scope).select_related(
             "prepared_by", "approved_by", "posted_by", "period", "reversal_of"
         )
 
@@ -252,7 +285,7 @@ class JournalDetailView(InstitutionRequiredMixin, DetailView):
         return ctx
 
 
-class JournalActionView(InstitutionRequiredMixin, View):
+class JournalActionView(JournalScopeMixin, InstitutionRequiredMixin, View):
     permission_required = "journal.view"
 
     ACTIONS = {
@@ -262,7 +295,7 @@ class JournalActionView(InstitutionRequiredMixin, View):
     }
 
     def post(self, request, pk):
-        journal = scoped_get(request, Journal, pk=pk)
+        journal = self._journal(pk)
         action = request.POST.get("action")
         back = reverse("accounting:journal-detail", args=[journal.pk])
         comment = request.POST.get("comment", "")
@@ -286,3 +319,58 @@ class JournalActionView(InstitutionRequiredMixin, View):
                 success_redirect=lambda rev: reverse("accounting:journal-detail", args=[rev.pk]),
             )
         raise PermissionDenied("Unknown action")
+
+
+# ---------------------------------------------------------------- recurring journals
+
+
+class RecurringJournalView(InstitutionRequiredMixin, View):
+    permission_required = "journal.view"
+
+    def get(self, request):
+        return render(
+            request,
+            "accounting/recurring.html",
+            {
+                "templates": RecurringJournal.objects.filter(institution=self.institution).select_related(
+                    "created_by", "approved_by"
+                ),
+                "form": RecurringJournalForm(),
+                "formset": JournalLineFormSet(form_kwargs={"institution": self.institution}),
+            },
+        )
+
+    def post(self, request):
+        back = reverse("accounting:recurring")
+        action = request.POST.get("action")
+        if action == "create":
+            form = RecurringJournalForm(request.POST)
+            formset = JournalLineFormSet(request.POST, form_kwargs={"institution": self.institution})
+            if not (form.is_valid() and formset.is_valid()):
+                messages.error(request, "Check the template details and lines.")
+                return redirect(back)
+            return run_action(
+                request,
+                lambda: recurring.create_template(
+                    self.institution, request.user, lines=_lines_from_formset(formset), **form.cleaned_data
+                ),
+                "Recurring journal created; it activates after independent approval.",
+                back,
+            )
+        template = scoped_get(request, RecurringJournal, pk=request.POST.get("template"))
+        if action == "approve":
+            return run_action(
+                request,
+                lambda: recurring.approve_template(template, request.user),
+                "Recurring journal approved and active.",
+                back,
+            )
+        if action in ("pause", "resume"):
+            return run_action(
+                request,
+                lambda: recurring.set_paused(template, request.user, action == "pause"),
+                "Recurring journal updated.",
+                back,
+            )
+        messages.error(request, "Unknown action.")
+        return redirect(back)

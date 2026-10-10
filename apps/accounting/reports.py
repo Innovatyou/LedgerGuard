@@ -43,26 +43,29 @@ class TrialBalance:
         return self.total_debit == self.total_credit
 
 
-def _entries(institution, date_from=None, date_to=None, branch=None):
+def _entries(institution, date_from=None, date_to=None, branches=None):
+    """``branches``: ``None`` for all branches, otherwise an iterable of branch ids to restrict to."""
     qs = LedgerEntry.objects.filter(institution=institution)
     if date_from:
         qs = qs.filter(accounting_date__gte=date_from)
     if date_to:
         qs = qs.filter(accounting_date__lte=date_to)
-    if branch is not None:
-        qs = qs.filter(branch=branch)
+    if branches is not None:
+        qs = qs.filter(branch_id__in=list(branches))
     return qs
 
 
-def account_movements(institution, date_from=None, date_to=None, branch=None) -> dict[int, tuple[Decimal, Decimal]]:
+def account_movements(institution, date_from=None, date_to=None, branches=None) -> dict[int, tuple[Decimal, Decimal]]:
     rows = (
-        _entries(institution, date_from, date_to, branch).values("account").annotate(dr=Sum("debit"), cr=Sum("credit"))
+        _entries(institution, date_from, date_to, branches)
+        .values("account")
+        .annotate(dr=Sum("debit"), cr=Sum("credit"))
     )
     return {r["account"]: (r["dr"] or ZERO, r["cr"] or ZERO) for r in rows}
 
 
-def trial_balance(institution, as_of: date, branch=None) -> TrialBalance:
-    movements = account_movements(institution, date_to=as_of, branch=branch)
+def trial_balance(institution, as_of: date, branches=None) -> TrialBalance:
+    movements = account_movements(institution, date_to=as_of, branches=branches)
     accounts = Account.objects.filter(institution=institution, pk__in=movements.keys()).order_by("code")
     rows = []
     for account in accounts:
@@ -97,16 +100,19 @@ class GeneralLedger:
     total_credit: Decimal
 
 
-def general_ledger(institution, account: Account, date_from: date | None, date_to: date | None) -> GeneralLedger:
+def general_ledger(
+    institution, account: Account, date_from: date | None, date_to: date | None, branches=None
+) -> GeneralLedger:
     if account.institution_id != institution.pk:
         raise ValueError("Account belongs to a different institution.")
+    base = LedgerEntry.objects.filter(account=account)
+    if branches is not None:
+        base = base.filter(branch_id__in=list(branches))
     opening = ZERO
     if date_from:
-        agg = LedgerEntry.objects.filter(account=account, accounting_date__lt=date_from).aggregate(
-            dr=Sum("debit"), cr=Sum("credit")
-        )
+        agg = base.filter(accounting_date__lt=date_from).aggregate(dr=Sum("debit"), cr=Sum("credit"))
         opening = natural_balance(account, agg["dr"] or ZERO, agg["cr"] or ZERO)
-    qs = LedgerEntry.objects.filter(account=account).select_related("journal")
+    qs = base.select_related("journal")
     if date_from:
         qs = qs.filter(accounting_date__gte=date_from)
     if date_to:
@@ -152,8 +158,8 @@ class IncomeStatement:
         return self.income.total - self.expenses.total
 
 
-def income_statement(institution, date_from: date, date_to: date, branch=None) -> IncomeStatement:
-    movements = account_movements(institution, date_from, date_to, branch)
+def income_statement(institution, date_from: date, date_to: date, branches=None) -> IncomeStatement:
+    movements = account_movements(institution, date_from, date_to, branches)
     income = StatementSection("Income")
     expenses = StatementSection("Expenses")
     accounts = Account.objects.filter(
@@ -195,8 +201,8 @@ class FinancialPosition:
         return self.difference == ZERO
 
 
-def statement_of_financial_position(institution, as_of: date, branch=None) -> FinancialPosition:
-    movements = account_movements(institution, date_to=as_of, branch=branch)
+def statement_of_financial_position(institution, as_of: date, branches=None) -> FinancialPosition:
+    movements = account_movements(institution, date_to=as_of, branches=branches)
     assets = StatementSection("Assets")
     liabilities = StatementSection("Liabilities")
     equity = StatementSection("Equity")

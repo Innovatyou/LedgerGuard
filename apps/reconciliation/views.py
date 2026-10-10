@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.views.generic import ListView, View
 
 from apps.accounting.models import Account
+from apps.approvals.changes import request_change, requires_approval
 from apps.approvals.services import history_for
 from apps.core.activity import log_activity
 from apps.core.exceptions import BusinessRuleError
@@ -39,7 +40,22 @@ class RuleEditView(InstitutionRequiredMixin, View):
         rule = scoped_get(request, MatchingRule, pk=pk) if pk else MatchingRule(institution=self.institution)
         before = rule.snapshot() if pk else None
         form = MatchingRuleForm(request.POST, instance=rule)
-        if form.is_valid():
+        if form.is_valid() and requires_approval(self.institution):
+            try:
+                cr = request_change(
+                    self.institution,
+                    request.user,
+                    "matching_rule",
+                    form.cleaned_data,
+                    target_obj=rule if pk else None,
+                    summary=f"{'Edit' if pk else 'Create'} matching rule {form.cleaned_data['name']}",
+                )
+            except BusinessRuleError as exc:
+                form.add_error(None, exc.message)
+            else:
+                messages.success(request, f"Change {cr.reference} submitted for independent approval.")
+                return redirect("approvals:changes")
+        elif form.is_valid():
             obj = form.save(commit=False)
             obj.updated_by = request.user
             obj.save()

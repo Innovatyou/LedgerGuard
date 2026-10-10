@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% load lg %}{% block title %}{{ asset.tag }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ asset.tag }} · {{ asset.name }} <span class="badge">{{ asset.get_status_display }}</span></h1><p class="muted">{{ asset.category }} · {{ asset.branch|default:"No branch" }} · {{ asset.location }}</p></div></div>
+<div class="grid grid-2"><div class="card"><dl class="facts">
+<dt>Cost</dt><dd>{{ asset.cost|money }}</dd><dt>Residual value</dt><dd>{{ asset.residual_value|money }}</dd>
+<dt>Method</dt><dd>{{ asset.get_method_display }}{% if asset.method == 'REDUCING_BALANCE' %} @ {{ asset.annual_rate }}% p.a.{% else %} over {{ asset.useful_life_months }} months{% endif %}</dd>
+<dt>Acquired / in service</dt><dd>{{ asset.acquisition_date|date:"d M Y" }} / {{ asset.in_service_date|date:"d M Y" }}</dd>
+<dt>Accumulated depreciation</dt><dd>{{ accumulated|money }}</dd><dt>Net book value</dt><dd><strong>{{ nbv|money }}</strong></dd>
+<dt>Supplier / invoice</dt><dd>{{ asset.supplier|default:"—" }} {{ asset.invoice_reference }}</dd>
+{% if asset.capitalisation_journal %}<dt>Capitalisation</dt><dd><a href="{% url 'accounting:journal-detail' asset.capitalisation_journal.pk %}">{{ asset.capitalisation_journal }}</a> ({{ asset.capitalisation_journal.get_status_display }})</dd>{% endif %}
+{% if asset.disposal_journal %}<dt>Disposal</dt><dd>{{ asset.disposal_date|date:"d M Y" }}, proceeds {{ asset.disposal_proceeds|money }} – <a href="{% url 'accounting:journal-detail' asset.disposal_journal.pk %}">{{ asset.disposal_journal }}</a> ({{ asset.disposal_journal.get_status_display }})</dd>{% endif %}
+</dl></div>
+<div class="card">{% if asset.status == 'ACTIVE' and perms_lg|has:"asset.dispose" %}<h3>Dispose</h3>
+<form method="post">{% csrf_token %}<div class="field"><label>Disposal date</label><input type="date" name="disposal_date" required></div>
+<div class="field"><label>Proceeds</label><input type="text" name="proceeds" value="0.00"></div>
+<div class="field"><label>Proceeds received into</label><select name="proceeds_account"><option value="">— none —</option>{% for a in accounts %}<option value="{{ a.pk }}">{{ a }}</option>{% endfor %}</select></div>
+<button class="btn danger">Prepare disposal journal</button></form><p class="help">The gain or loss is calculated against net book value; the journal goes through normal approval.</p>{% else %}<p class="muted">No actions available.</p>{% endif %}</div></div>
+<div class="card table-wrap"><h3>Depreciation history</h3><table class="data compact"><thead><tr><th>Period</th><th>Journal</th><th>Status</th><th class="num">NBV before</th><th class="num">Charge</th></tr></thead><tbody>
+{% for l in history %}<tr><td>{{ l.run.period }}</td><td>{% if l.run.journal %}<a href="{% url 'accounting:journal-detail' l.run.journal.pk %}">{{ l.run.journal }}</a>{% endif %}</td><td>{{ l.run.get_status_display }}</td><td class="num">{{ l.nbv_before|money }}</td><td class="num">{{ l.amount|money }}</td></tr>
+{% empty %}<tr><td colspan="5" class="muted">No depreciation yet.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

@@ -6,6 +6,7 @@
 <dl class="facts"><dt>Username</dt><dd>{{ request.user.username }}</dd><dt>Email</dt><dd>{{ request.user.email }}</dd>
 <dt>Job title</dt><dd>{{ request.user.job_title }}</dd>
 <dt>MFA</dt><dd>{% if request.user.mfa_enabled %}<span class="badge ok">Enabled</span>{% else %}<span class="badge warn">Not enabled</span> <a href="{% url 'accounts:mfa-setup' %}">Set up</a>{% endif %}</dd>
+<dt>Password</dt><dd><a href="{% url 'accounts:password-change' %}">Change password</a></dd>
 <dt>Permissions here</dt><dd>{{ perms_lg|length }} action(s) in {{ active_institution }}</dd></dl>
 </div>
 <div class="card"><h3>API access token</h3>

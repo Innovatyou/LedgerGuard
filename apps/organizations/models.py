@@ -45,6 +45,10 @@ class Institution(TimeStampedModel):
     require_independent_approval = models.BooleanField(
         default=True, help_text="Maker-checker: preparers may not approve their own work."
     )
+    require_config_approval = models.BooleanField(
+        default=True,
+        help_text="Chart-of-accounts and matching-rule changes take effect only after independent approval.",
+    )
     require_mfa = models.BooleanField(default=False)
     document_retention_years = models.PositiveSmallIntegerField(default=7)
     is_active = models.BooleanField(default=True)

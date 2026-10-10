@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Integrations{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Integrations</h1><p class="muted">Authorised inbound interfaces for core-banking extracts and settlement reports. Every file passes the same validation, duplicate checks and audit trail as a manual import.</p></div></div>
+<div class="card table-wrap"><table class="data compact"><thead><tr><th>Name</th><th>Type</th><th>Import profile</th><th>Service user</th><th>Allow-list / folder</th><th>Auto-commit</th><th>Last used</th><th>Status</th><th></th></tr></thead><tbody>
+{% for e in endpoints %}<tr><td>{{ e.name }}</td><td>{{ e.get_kind_display }}</td><td>{{ e.import_profile }}</td><td>{{ e.service_user }}</td><td class="mono">{% if e.kind == 'API_UPLOAD' %}{{ e.allowed_ips|join:", "|default:"any address" }}{% else %}{{ active_institution.code }}/{{ e.folder }}{% endif %}</td><td>{{ e.auto_commit|yesno:"Yes,No" }}</td><td>{{ e.last_used_at|date:"d M H:i"|default:"—" }}</td><td>{% if e.is_active %}<span class="badge ok">Active</span>{% else %}<span class="badge">Disabled</span>{% endif %}</td>
+<td>{% if perms_lg|has:"integration.manage" %}<form method="post" class="inline-form">{% csrf_token %}<input type="hidden" name="endpoint" value="{{ e.pk }}"><button class="btn small" name="action" value="toggle">{% if e.is_active %}Disable{% else %}Enable{% endif %}</button>{% if e.kind == 'API_UPLOAD' %}<button class="btn small" name="action" value="rotate">Rotate key</button>{% endif %}</form>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="9" class="muted">No endpoints.</td></tr>{% endfor %}</tbody></table>
+<p class="help">API: <span class="mono">POST /api/v1/integrations/inbound/</span> with header <span class="mono">Authorization: Bearer &lt;key&gt;</span> and multipart field <span class="mono">file</span>. Drop folders are processed by <span class="mono">python manage.py run_scheduled_jobs</span> (or the Celery beat schedule).</p></div>
+{% if perms_lg|has:"integration.manage" %}<div class="card"><h3>New endpoint</h3><form method="post" class="form-grid">{% csrf_token %}<input type="hidden" name="action" value="create">
+<div class="field"><label>Name</label><input type="text" name="name" required></div>
+<div class="field"><label>Type</label><select name="kind">{% for v, l in kinds %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label>Import profile</label><select name="profile">{% for p in profiles %}<option value="{{ p.pk }}">{{ p }}</option>{% endfor %}</select></div>
+<div class="field"><label>Service user</label><select name="service_user">{% for u in users %}<option value="{{ u.pk }}">{{ u }}</option>{% endfor %}</select></div>
+<div class="field"><label>Allowed IPs / networks (API)</label><input type="text" name="allowed_ips" placeholder="10.0.0.5, 10.1.0.0/24"></div>
+<div class="field"><label>Drop sub-folder (drop folder)</label><input type="text" name="folder" placeholder="gl-extracts"></div>
+<div class="field"><label><input type="checkbox" name="auto_commit"> Auto-commit clean files</label></div>
+<div class="field"><button class="btn primary">Create endpoint</button></div></form></div>{% endif %}
+<div class="card table-wrap"><h3>Recent calls</h3><table class="data compact"><thead><tr><th>When</th><th>Endpoint</th><th>File</th><th>From</th><th>Result</th><th>Detail</th></tr></thead><tbody>
+{% for l in logs %}<tr><td class="mono">{{ l.timestamp|date:"Y-m-d H:i:s" }}</td><td>{{ l.endpoint }}</td><td>{{ l.filename }}{% if l.batch %} → <a href="{% url 'imports:batch-detail' l.batch_id %}">batch #{{ l.batch_id }}</a>{% endif %}</td><td class="mono">{{ l.remote_ip|default:"" }}</td><td><span class="badge {% if l.status == 'SUCCESS' %}ok{% else %}bad{% endif %}">{{ l.get_status_display }}</span></td><td>{{ l.message|truncatechars:120 }}</td></tr>{% empty %}<tr><td colspan="6" class="muted">No calls yet.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

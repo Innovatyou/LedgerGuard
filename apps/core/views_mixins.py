@@ -3,7 +3,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.shortcuts import get_object_or_404, redirect
 
-from apps.accounts.services import has_perm
+from apps.accounts.services import branch_scope, has_perm
 
 from .exceptions import BusinessRuleError
 
@@ -32,6 +32,13 @@ class InstitutionRequiredMixin(LoginRequiredMixin):
 
     def can(self, code):
         return has_perm(self.request.user, self.institution, code)
+
+    @property
+    def branch_scope(self):
+        """``None`` if the user may see every branch, else the set of permitted branch ids."""
+        if not hasattr(self, "_branch_scope"):
+            self._branch_scope = branch_scope(self.request.user, self.institution)
+        return self._branch_scope
 
 
 class ScopedQuerysetMixin(InstitutionRequiredMixin):

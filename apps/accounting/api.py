@@ -206,6 +206,8 @@ class JournalViewSet(InstitutionScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().prefetch_related("lines")
+        if self.branch_scope is not None:
+            qs = qs.filter(branch_id__in=self.branch_scope)
         status = self.request.query_params.get("status")
         return qs.filter(status=status) if status else qs
 

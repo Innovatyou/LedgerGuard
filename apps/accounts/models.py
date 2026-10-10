@@ -14,6 +14,8 @@ class User(AbstractUser):
     mfa_enabled = models.BooleanField(default=False)
     mfa_secret = models.CharField(max_length=64, blank=True)
     mfa_last_used_step = models.BigIntegerField(null=True, blank=True)
+    must_change_password = models.BooleanField(default=False)
+    password_changed_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return self.get_full_name() or self.username

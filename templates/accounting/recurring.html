@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Recurring journals{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Recurring journals</h1><p class="muted">Templates generate journals on schedule; each generated journal is submitted for normal approval and posting.</p></div></div>
+<div class="card table-wrap"><table class="data"><thead><tr><th>Name</th><th>Frequency</th><th>Next run</th><th>Last run</th><th>Created by</th><th>Approved by</th><th>Status</th><th></th></tr></thead><tbody>
+{% for t in templates %}<tr><td><strong>{{ t.name }}</strong><br><span class="muted">{{ t.description }}</span>{% if t.last_error %}<br><span style="color:var(--bad)">{{ t.last_error }}</span>{% endif %}</td>
+<td>{{ t.get_frequency_display }} (day {{ t.day_of_month }})</td><td>{{ t.next_run_date|date:"d M Y" }}</td><td>{{ t.last_run_date|date:"d M Y"|default:"—" }}</td><td>{{ t.created_by }}</td><td>{{ t.approved_by|default:"—" }}</td>
+<td><span class="badge {% if t.status == 'ACTIVE' %}ok{% elif t.status == 'PENDING' %}warn{% endif %}">{{ t.get_status_display }}</span></td>
+<td><form method="post">{% csrf_token %}<input type="hidden" name="template" value="{{ t.pk }}">
+{% if t.status == 'PENDING' and perms_lg|has:"journal.approve" and t.created_by != request.user %}<button class="btn small success" name="action" value="approve">Approve</button>{% endif %}
+{% if t.status == 'ACTIVE' and perms_lg|has:"journal.recurring_manage" %}<button class="btn small" name="action" value="pause">Pause</button>{% endif %}
+{% if t.status == 'PAUSED' and perms_lg|has:"journal.recurring_manage" %}<button class="btn small" name="action" value="resume">Resume</button>{% endif %}</form></td></tr>
+{% empty %}<tr><td colspan="8" class="muted">No recurring journals.</td></tr>{% endfor %}</tbody></table></div>
+{% if perms_lg|has:"journal.recurring_manage" %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="create">
+<div class="card"><h3>New recurring journal</h3>{% include "includes/form.html" %}</div>
+<div class="card table-wrap"><h3>Lines</h3>{{ formset.management_form }}
+<table class="data compact" id="lines"><thead><tr><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th><th>Department</th></tr></thead><tbody>
+{% for f in formset %}<tr><td>{{ f.account }}</td><td>{{ f.description }}</td><td>{{ f.debit }}</td><td>{{ f.credit }}</td><td>{{ f.department }}</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td colspan="2" class="num">Totals</td><td class="num" id="tdr">0.00</td><td class="num" id="tcr">0.00</td><td id="tdiff"></td></tr></tfoot></table></div>
+<button class="btn primary">Create (requires approval)</button></form>{% endif %}
+{% endblock %}

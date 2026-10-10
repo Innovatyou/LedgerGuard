@@ -9,6 +9,7 @@ urlpatterns = [
     path("accounts/new/", views.AccountEditView.as_view(), name="account-create"),
     path("accounts/<int:pk>/", views.AccountEditView.as_view(), name="account-edit"),
     path("accounts/apply-template/", views.ApplyTemplateView.as_view(), name="apply-template"),
+    path("recurring/", views.RecurringJournalView.as_view(), name="recurring"),
     path("periods/", views.PeriodListView.as_view(), name="periods"),
     path("journals/", views.JournalListView.as_view(), name="journals"),
     path("journals/new/", views.JournalEditView.as_view(), name="journal-create"),

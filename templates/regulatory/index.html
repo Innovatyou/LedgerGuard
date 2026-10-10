@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Regulatory workpapers{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Regulatory workpapers</h1><p class="muted">Supporting workpapers computed from posted ledger balances. LedgerGuard does not submit returns.</p></div>
+{% if perms_lg|has:"regulatory.manage" %}<form method="post">{% csrf_token %}<button class="btn">Install illustrative starter template</button></form>{% endif %}</div>
+<div class="grid grid-2">
+<div class="card table-wrap"><h3>Templates</h3><table class="data compact"><thead><tr><th>Code</th><th>Name</th><th>Regulator</th><th>Frequency</th></tr></thead><tbody>
+{% for t in templates %}<tr><td class="mono"><a href="{% url 'regulatory:template' t.pk %}">{{ t.code }}</a></td><td>{{ t.name }}</td><td>{{ t.regulator }}</td><td>{{ t.get_frequency_display }}</td></tr>{% empty %}<tr><td colspan="4" class="muted">No templates.</td></tr>{% endfor %}</tbody></table></div>
+{% if perms_lg|has:"regulatory.manage" and templates %}<div class="card"><h3>Prepare a workpaper</h3><form method="post" action="{% url 'regulatory:prepare' %}">{% csrf_token %}
+<div class="field"><label>Template</label><select name="template">{% for t in templates %}<option value="{{ t.pk }}">{{ t }}</option>{% endfor %}</select></div>
+<div class="form-grid"><div class="field"><label>Period start</label><input type="date" name="period_start" required></div><div class="field"><label>Period end</label><input type="date" name="period_end" required></div></div>
+<button class="btn primary">Prepare</button></form></div>{% endif %}</div>
+<div class="card table-wrap"><h3>Workpapers</h3><table class="data compact"><thead><tr><th>Template</th><th>Period end</th><th>Validations</th><th>Prepared by</th><th>Reviewed by</th><th>Status</th></tr></thead><tbody>
+{% for r in returns %}<tr><td><a href="{% url 'regulatory:return' r.pk %}">{{ r.template.code }}</a></td><td>{{ r.period_end|date:"d M Y" }}</td><td>{% if r.passed %}<span class="badge ok">Pass</span>{% else %}<span class="badge bad">Fail</span>{% endif %}</td><td>{{ r.prepared_by }}</td><td>{{ r.reviewed_by|default:"—" }}</td><td>{{ r.get_status_display }}</td></tr>{% empty %}<tr><td colspan="6" class="muted">None yet.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

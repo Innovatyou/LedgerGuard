@@ -1,10 +1,14 @@
+import secrets
+
 from django.contrib import messages
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import PasswordChangeForm
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 from django.views.generic import ListView, View
@@ -147,6 +151,21 @@ def switch_institution(request):
 
 
 @login_required
+def password_change(request):
+    form = PasswordChangeForm(request.user, request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+        user.must_change_password = False
+        user.password_changed_at = timezone.now()
+        user.save(update_fields=["must_change_password", "password_changed_at"])
+        update_session_auth_hash(request, user)
+        log_activity("auth.password_changed", user=user)
+        messages.success(request, "Your password has been changed.")
+        return redirect("reporting:dashboard")
+    return render(request, "accounts/password_change.html", {"form": form})
+
+
+@login_required
 def profile(request):
     token = Token.objects.filter(user=request.user).first()
     if request.method == "POST" and request.POST.get("action") == "token":
@@ -181,6 +200,7 @@ class UserCreateView(InstitutionRequiredMixin, View):
             with transaction.atomic():
                 user = form.save(commit=False)
                 user.set_password(form.cleaned_data["password"])
+                user.must_change_password = True
                 user.save()
                 Membership.objects.create(
                     user=user,
@@ -216,6 +236,19 @@ class MembershipEditView(InstitutionRequiredMixin, View):
         if membership.user_id == request.user.pk:
             messages.error(request, "You cannot change your own access.")
             return redirect("accounts:users")
+        if request.POST.get("action") == "reset_password":
+            temporary = secrets.token_urlsafe(9) + "-Lg7"
+            target = membership.user
+            target.set_password(temporary)
+            target.must_change_password = True
+            target.save(update_fields=["password", "must_change_password"])
+            log_activity("users.password_reset", user=request.user, institution=self.institution, obj=target)
+            messages.warning(
+                request,
+                f"Temporary password for {target.username}: {temporary} — give it to the user through a secure "
+                "channel. They must change it at next sign-in. It is not shown again.",
+            )
+            return redirect("accounts:membership-edit", pk=membership.pk)
         form = MembershipForm(request.POST, instance=membership, institution=self.institution)
         if form.is_valid():
             form.save()

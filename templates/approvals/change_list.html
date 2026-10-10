@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Configuration changes{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Configuration changes</h1><p class="muted">Changes to the chart of accounts, matching rules and institution settings take effect only after independent approval.</p></div>
+<form class="inline-form" method="get"><select name="status" data-autosubmit><option value="">All</option>{% for v, l in statuses %}<option value="{{ v }}" {% if status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></form></div>
+{% for cr in changes %}
+<div class="card"><div class="page-head" style="margin-bottom:.5rem"><div><h3 style="margin:0">{{ cr.reference }} · {{ cr.summary }} <span class="badge {{ cr.status|status_class }}">{{ cr.get_status_display }}</span></h3>
+<p class="muted">{{ targets|get_item:cr.target_type }} · requested by {{ cr.requested_by }} on {{ cr.requested_at|date:"d M Y H:i" }}{% if cr.decided_by %} · decided by {{ cr.decided_by }} {{ cr.decided_at|date:"d M Y H:i" }}{% endif %}</p></div></div>
+<table class="data compact"><thead><tr><th>Field</th><th>Current</th><th>Proposed</th></tr></thead><tbody>
+{% for k, v in cr.payload.items %}<tr><td class="mono">{{ k }}</td><td>{{ cr.before|get_item:k|default_if_none:"—" }}</td><td><strong>{{ v|default_if_none:"—" }}</strong></td></tr>{% endfor %}
+</tbody></table>
+{% if cr.decision_comment %}<p class="muted">Comment: {{ cr.decision_comment }}</p>{% endif %}
+{% if cr.status == 'PENDING' %}<form method="post" class="inline-form" style="margin-top:.5rem">{% csrf_token %}<input type="hidden" name="change" value="{{ cr.pk }}"><input type="text" name="comment" placeholder="Comment (required to reject/withdraw)">
+{% if perms_lg|has:"config.approve" and cr.requested_by != request.user %}<button class="btn success" name="action" value="approve">Approve &amp; apply</button><button class="btn danger" name="action" value="reject">Reject</button>{% endif %}
+{% if cr.requested_by == request.user %}<button class="btn" name="action" value="reject">Withdraw</button>{% endif %}</form>{% endif %}
+</div>
+{% empty %}<div class="card muted">No change requests.</div>{% endfor %}
+{% endblock %}

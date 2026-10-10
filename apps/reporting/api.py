@@ -29,7 +29,9 @@ class TrialBalanceAPI(InstitutionAPIView):
     default_permission = "report.view"
 
     def get(self, request):
-        tb = reports.trial_balance(self.institution, _date(request.query_params.get("as_of"), date.today()))
+        tb = reports.trial_balance(
+            self.institution, _date(request.query_params.get("as_of"), date.today()), branches=self.branch_scope
+        )
         return Response(
             {
                 "as_of": tb.as_of,
@@ -60,6 +62,7 @@ class IncomeStatementAPI(InstitutionAPIView):
             self.institution,
             _date(request.query_params.get("from"), year_start(self.institution, today)),
             _date(request.query_params.get("to"), today),
+            branches=self.branch_scope,
         )
         return Response(
             {
@@ -77,7 +80,7 @@ class FinancialPositionAPI(InstitutionAPIView):
 
     def get(self, request):
         fp = reports.statement_of_financial_position(
-            self.institution, _date(request.query_params.get("as_of"), date.today())
+            self.institution, _date(request.query_params.get("as_of"), date.today()), branches=self.branch_scope
         )
         return Response(
             {
@@ -102,6 +105,7 @@ class GeneralLedgerAPI(InstitutionAPIView):
             account,
             _date(request.query_params.get("from"), None),
             _date(request.query_params.get("to"), None),
+            branches=self.branch_scope,
         )
         return Response(
             {

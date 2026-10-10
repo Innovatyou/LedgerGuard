@@ -11,14 +11,4 @@
 <p class="help">Need more lines? Save the draft and edit it again – four blank lines are added each time.</p></div>
 <button class="btn primary">Save draft</button> <a class="btn" href="{% url 'accounting:journals' %}">Cancel</a>
 </form>
-<script>
-(function(){
-  function sum(sel){let t=0;document.querySelectorAll(sel).forEach(i=>{const v=parseFloat(i.value);if(!isNaN(v))t+=Math.round(v*100);});return t;}
-  function upd(){const d=sum('input[name$="-debit"]'),c=sum('input[name$="-credit"]');
-    document.getElementById('tdr').textContent=(d/100).toLocaleString(undefined,{minimumFractionDigits:2});
-    document.getElementById('tcr').textContent=(c/100).toLocaleString(undefined,{minimumFractionDigits:2});
-    const el=document.getElementById('tdiff');el.textContent=d===c?'Balanced':'Difference '+((d-c)/100).toFixed(2);el.className=d===c?'badge ok':'badge bad';}
-  document.getElementById('lines').addEventListener('input',upd);upd();
-})();
-</script>
 {% endblock %}

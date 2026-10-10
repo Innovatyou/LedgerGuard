@@ -1,4 +1,5 @@
 {% extends "base.html" %}{% block title %}Edit access{% endblock %}
 {% block content %}<div class="page-head"><h1>Access for {{ membership.user }}</h1></div>
 <div class="card"><p class="muted">Deactivating a membership immediately removes access to this institution's data.</p>
-<form method="post">{% csrf_token %}{% include "includes/form.html" %}<button class="btn primary">Save</button></form></div>{% endblock %}
+<form method="post">{% csrf_token %}{% include "includes/form.html" %}<button class="btn primary">Save</button></form>
+<form method="post" style="margin-top:1rem">{% csrf_token %}<input type="hidden" name="action" value="reset_password"><button class="btn danger">Reset password (issue temporary password)</button></form></div>{% endblock %}

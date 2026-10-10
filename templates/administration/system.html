@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% load lg %}{% block title %}System{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>System operations</h1><p class="muted">Platform operators only.</p></div>
+<form method="post" class="inline-form">{% csrf_token %}<button class="btn" name="action" value="integrity">Run integrity checks</button><button class="btn primary" name="action" value="backup">Back up database now</button></form></div>
+<div class="grid grid-2"><div class="card"><h3>Health</h3><dl class="facts">{% for k, v in health.items %}<dt>{{ k|title }}</dt><dd>{% if v == "ok" %}<span class="badge ok">ok</span>{% else %}{{ v }}{% endif %}</dd>{% endfor %}</dl></div>
+<div class="card table-wrap"><h3>Integrity checks</h3><table class="data compact"><tbody>{% for c in checks %}<tr><td>{{ c.ran_at|date:"d M Y H:i" }}</td><td>{{ c.institution.code }}</td><td>{% if c.passed %}<span class="badge ok">Passed</span>{% else %}<span class="badge bad">Failed</span> {{ c.findings|join:"; "|truncatechars:150 }}{% endif %}</td></tr>{% empty %}<tr><td class="muted">None yet.</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card table-wrap"><h3>Backups</h3><table class="data compact"><thead><tr><th>Created</th><th>Type</th><th>File</th><th class="num">Size</th><th>SHA-256</th><th>Status</th></tr></thead><tbody>
+{% for b in backups %}<tr><td>{{ b.created_at|date:"d M Y H:i" }}</td><td>{{ b.get_kind_display }}</td><td class="mono">{{ b.path }}</td><td class="num">{{ b.size|filesizeformat }}</td><td class="mono">{{ b.sha256|truncatechars:16 }}</td><td><span class="badge {% if b.status == 'VERIFIED' %}ok{% elif b.status == 'FAILED' %}bad{% endif %}">{{ b.get_status_display }}</span> {{ b.message|truncatechars:80 }}</td></tr>{% empty %}<tr><td colspan="6" class="muted">No backups recorded.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

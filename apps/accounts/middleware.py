@@ -1,7 +1,7 @@
 from django.shortcuts import redirect
 from django.urls import reverse
 
-_EXEMPT_PREFIXES = ("/accounts/mfa/", "/accounts/logout/", "/static/", "/health/")
+_EXEMPT_PREFIXES = ("/accounts/mfa/", "/accounts/logout/", "/accounts/password/", "/static/", "/health/")
 
 
 class MFAEnforcementMiddleware:
@@ -16,6 +16,13 @@ class MFAEnforcementMiddleware:
 
     def __call__(self, request):
         user = getattr(request, "user", None)
+        if (
+            user is not None
+            and user.is_authenticated
+            and user.must_change_password
+            and not request.path.startswith(_EXEMPT_PREFIXES)
+        ):
+            return redirect(reverse("accounts:password-change"))
         if (
             user is not None
             and user.is_authenticated

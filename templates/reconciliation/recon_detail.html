@@ -49,13 +49,6 @@
 {% if workable and perms_lg|has:"recon.investigate" %}<form method="post" action="{% url 'reconciliation:action' recon.pk %}" class="inline-form" style="margin-top:.5rem">{% csrf_token %}<input type="hidden" name="action" value="adjust">
 <select name="side"><option value="LEFT">{{ recon.left_label }}</option><option value="RIGHT">{{ recon.right_label }}</option></select><input type="text" name="description" placeholder="Description" required><input type="text" name="reference" placeholder="Supporting reference"><input type="text" name="amount" placeholder="Amount (±)" required><button class="btn small">Add</button></form>{% endif %}</div>
 </div>
-<script>
-document.querySelectorAll('.pick-left, .pick-right').forEach(cb => cb.addEventListener('change', () => {
-  const ids = s => Array.from(document.querySelectorAll('.pick-' + s + ':checked')).map(c => c.value).join(',');
-  const l = document.getElementById('mm-left'), r = document.getElementById('mm-right');
-  if (l) { l.value = ids('left'); r.value = ids('right'); }
-}));
-</script>
 {% elif tab == 'review' %}
 <div class="card table-wrap">
 {% if workable and perms_lg|has:"recon.investigate" %}<form method="post" action="{% url 'reconciliation:action' recon.pk %}" class="inline-form" style="margin-bottom:.5rem">{% csrf_token %}<input type="hidden" name="tab" value="review"><input type="text" name="note" placeholder="Review note"><button class="btn small success" name="action" value="accept_high_confidence">Accept all zero-difference high-confidence candidates</button></form>{% endif %}

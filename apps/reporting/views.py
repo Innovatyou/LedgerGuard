@@ -90,8 +90,8 @@ class DashboardView(InstitutionRequiredMixin, View):
         }
         if self.can("report.view"):
             ys = year_start(inst, today)
-            ctx["income_statement"] = reports.income_statement(inst, ys, today)
-            ctx["tb"] = reports.trial_balance(inst, today)
+            ctx["income_statement"] = reports.income_statement(inst, ys, today, branches=self.branch_scope)
+            ctx["tb"] = reports.trial_balance(inst, today, branches=self.branch_scope)
         return render(request, "reporting/dashboard.html", ctx)
 
 
@@ -131,7 +131,7 @@ class TrialBalanceView(ReportView):
 
     def build(self, request):
         as_of = _date(request.GET.get("as_of"), date.today())
-        tb = reports.trial_balance(self.institution, as_of)
+        tb = reports.trial_balance(self.institution, as_of, branches=self.branch_scope)
         return {"tb": tb, "as_of": as_of}, tables.trial_balance_table(tb, self.institution, request.user)
 
 
@@ -152,7 +152,7 @@ class GeneralLedgerView(ReportView):
             from .exports import Column, Table
 
             return ctx, Table("General Ledger", "Select an account", [Column("—")])
-        gl = reports.general_ledger(self.institution, account, date_from, date_to)
+        gl = reports.general_ledger(self.institution, account, date_from, date_to, branches=self.branch_scope)
         ctx["gl"] = gl
         return ctx, tables.general_ledger_table(gl, self.institution, request.user)
 
@@ -165,7 +165,7 @@ class IncomeStatementView(ReportView):
         today = date.today()
         date_from = _date(request.GET.get("from"), year_start(self.institution, today))
         date_to = _date(request.GET.get("to"), today)
-        stmt = reports.income_statement(self.institution, date_from, date_to)
+        stmt = reports.income_statement(self.institution, date_from, date_to, branches=self.branch_scope)
         return (
             {"stmt": stmt, "date_from": date_from, "date_to": date_to},
             tables.income_statement_table(stmt, self.institution, request.user),
@@ -178,7 +178,7 @@ class FinancialPositionView(ReportView):
 
     def build(self, request):
         as_of = _date(request.GET.get("as_of"), date.today())
-        fp = reports.statement_of_financial_position(self.institution, as_of)
+        fp = reports.statement_of_financial_position(self.institution, as_of, branches=self.branch_scope)
         return {"fp": fp, "as_of": as_of}, tables.financial_position_table(fp, self.institution, request.user)
 
 

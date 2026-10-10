@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Depreciation{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Depreciation runs</h1><p class="muted">Full-month convention in the month placed in service; never below residual value.</p></div>
+<form class="inline-form" method="get"><select name="period">{% for p in periods %}<option value="{{ p.pk }}" {% if period.pk == p.pk %}selected{% endif %}>{{ p }}</option>{% endfor %}</select><button class="btn">Preview</button></form></div>
+{% if preview %}<div class="card table-wrap"><h3>Preview for {{ period }} – total {{ preview.total|money }}</h3>
+<table class="data compact"><thead><tr><th>Asset</th><th>Category</th><th>Branch</th><th class="num">NBV before</th><th class="num">Charge</th></tr></thead><tbody>
+{% for a, nbv, amt in preview.lines %}<tr><td>{{ a }}</td><td>{{ a.category.name }}</td><td>{{ a.branch|default:"—" }}</td><td class="num">{{ nbv|money }}</td><td class="num">{{ amt|money }}</td></tr>{% empty %}<tr><td colspan="5" class="muted">Nothing due.</td></tr>{% endfor %}</tbody></table>
+{% if preview.lines and perms_lg|has:"asset.depreciate" %}<form method="post" style="margin-top:.5rem">{% csrf_token %}<input type="hidden" name="action" value="run"><input type="hidden" name="period" value="{{ period.pk }}"><button class="btn primary">Prepare depreciation journal</button></form>{% endif %}</div>{% endif %}
+<div class="card table-wrap"><h3>Runs</h3><table class="data compact"><thead><tr><th>Period</th><th class="num">Total</th><th>Journal</th><th>Prepared by</th><th>Status</th><th></th></tr></thead><tbody>
+{% for r in runs %}<tr><td>{{ r.period }}</td><td class="num">{{ r.total|money }}</td><td>{% if r.journal %}<a href="{% url 'accounting:journal-detail' r.journal.pk %}">{{ r.journal }}</a> ({{ r.journal.get_status_display }}){% endif %}</td><td>{{ r.prepared_by }}</td><td>{{ r.get_status_display }}</td>
+<td>{% if r.status == 'PREPARED' and perms_lg|has:"asset.depreciate" %}<form method="post" class="inline-form">{% csrf_token %}<input type="hidden" name="run" value="{{ r.pk }}"><input type="text" name="reason" placeholder="Reason" required><button class="btn small danger">Cancel</button></form>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="6" class="muted">No runs.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% load lg %}{% block title %}{{ template.code }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ template.code }} · {{ template.name }}</h1><p class="muted">{{ template.get_regulator_display }} · {{ template.get_frequency_display }}</p></div></div>
+<div class="callout">{{ template.description }}</div>
+<div class="card table-wrap"><table class="data compact"><thead><tr><th>Line</th><th>Label</th><th>Type</th><th>Selection / formula</th><th>Basis</th><th>Sign</th><th></th></tr></thead><tbody>
+{% for l in template.lines.all %}<tr><td class="mono">{{ l.code }}</td><td>{% if l.is_total or l.kind == 'HEADING' %}<strong>{{ l.label }}</strong>{% else %}{{ l.label }}{% endif %}</td><td>{{ l.get_kind_display }}</td>
+<td class="mono">{% if l.kind == 'FORMULA' %}{{ l.formula }}{% else %}{% if l.subcategories %}sub: {{ l.subcategories|join:", " }} {% endif %}{% if l.categories %}cat: {{ l.categories|join:", " }} {% endif %}{% if l.regulatory_codes %}reg: {{ l.regulatory_codes|join:", " }} {% endif %}{% if l.account_codes %}acct: {{ l.account_codes|join:", " }}{% endif %}{% endif %}</td>
+<td>{{ l.get_basis_display|truncatewords:2 }}</td><td>{{ l.get_sign_display|truncatewords:2 }}</td>
+<td>{% if perms_lg|has:"regulatory.manage" %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="delete_line"><input type="hidden" name="line" value="{{ l.pk }}"><button class="btn small danger">Remove</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table>
+<h3>Validation rules</h3><ul>{% for r in template.rules.all %}<li>{{ r.name }}: <span class="mono">{{ r.expression }}</span> (tolerance {{ r.tolerance }})</li>{% empty %}<li class="muted">None.</li>{% endfor %}</ul></div>
+{% if perms_lg|has:"regulatory.manage" %}<div class="grid grid-2"><div class="card"><h3>Add line</h3><form method="post">{% csrf_token %}<input type="hidden" name="action" value="line">{% with form=line_form %}{% include "includes/form.html" %}{% endwith %}<button class="btn">Add line</button></form></div>
+<div class="card"><h3>Add validation rule</h3><form method="post">{% csrf_token %}<input type="hidden" name="action" value="rule"><div class="field"><label>Name</label><input type="text" name="name" required></div><div class="field"><label>Expression</label><input type="text" name="expression" placeholder="A900 = T900" required></div><div class="field"><label>Tolerance</label><input type="text" name="tolerance" value="0.00"></div><button class="btn">Add rule</button></form></div></div>{% endif %}
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% load lg %}{% block title %}Loan portfolio{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Loan portfolio control</h1><p class="muted">Upload the core-banking loan listing; LedgerGuard classifies it, computes provisions and compares it with the GL.</p></div></div>
+{% if perms_lg|has:"portfolio.manage" %}<div class="card"><h3>Upload loan listing</h3>
+<form method="post" enctype="multipart/form-data" class="form-grid">{% csrf_token %}<input type="hidden" name="action" value="upload">
+<div class="field"><label>Portfolio date *</label><input type="date" name="as_of" required></div>
+<div class="field"><label>File (.csv / .xlsx) *</label><input type="file" name="file" required></div>
+<div class="field"><label>Principal control account *</label><select name="principal_account" required>{% for a in accounts %}<option value="{{ a.pk }}" {% if a.subcategory == 'LOANS_ADVANCES' %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></div>
+<div class="field"><label>Interest receivable account</label><select name="interest_account"><option value="">—</option>{% for a in accounts %}<option value="{{ a.pk }}">{{ a }}</option>{% endfor %}</select></div>
+<div class="field"><label>Impairment allowance account</label><select name="provision_account"><option value="">—</option>{% for a in accounts %}<option value="{{ a.pk }}" {% if a.subcategory == 'LOAN_IMPAIRMENT' %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></div>
+<div class="field"><button class="btn primary">Load listing</button></div></form>
+<p class="help">Required columns: account number, principal outstanding, days past due. Optional: customer, product, branch code, accrued interest. Files with any invalid row are rejected in full.</p></div>{% endif %}
+<div class="grid grid-2">
+<div class="card table-wrap"><h3>Snapshots</h3><table class="data compact"><thead><tr><th>As at</th><th>File</th><th>Uploaded by</th><th>Status</th></tr></thead><tbody>
+{% for s in snapshots %}<tr><td><a href="{% url 'loans:snapshot' s.pk %}">{{ s.as_of|date:"d M Y" }}</a></td><td>{{ s.source_file }}</td><td>{{ s.uploaded_by }}</td><td><span class="badge {% if s.status == 'REVIEWED' %}ok{% endif %}">{{ s.get_status_display }}</span></td></tr>{% empty %}<tr><td colspan="4" class="muted">None.</td></tr>{% endfor %}</tbody></table></div>
+<div class="card table-wrap"><h3>Classification bands</h3><div class="callout">Defaults are starting points. Verify them against current CBN prudential guidelines and your IFRS 9 policy.</div>
+<table class="data compact"><thead><tr><th>Band</th><th>Days past due</th><th class="num">Provision %</th><th></th></tr></thead><tbody>
+{% for b in bands %}<tr><td>{{ b.name }}</td><td>{{ b.min_days }}–{{ b.max_days|default:"∞" }}</td><td class="num">{{ b.provision_rate }}</td>
+<td>{% if perms_lg|has:"portfolio.manage" %}<form method="post" class="inline-form">{% csrf_token %}<input type="hidden" name="action" value="band"><input type="hidden" name="band" value="{{ b.pk }}"><input type="text" name="provision_rate" value="{{ b.provision_rate }}" size="6"><button class="btn small">Change</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}
