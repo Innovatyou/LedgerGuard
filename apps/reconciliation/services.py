@@ -175,16 +175,17 @@ def run_reconciliation(recon: Reconciliation, user) -> dict:
             func = engine.STRATEGIES[rule.strategy]
             proposals = [p for p in func(rule, left, right) if p.signature not in rejected]
             used: set[int] = set()
-            created = 0
+            accepted_for_rule = []
             for proposal in proposals:
                 ids = set(proposal.ids)
                 if ids & used:
                     continue
                 used |= ids
                 category = classify(rule, proposal)
-                _persist(recon, rule, proposal, category)
+                accepted_for_rule.append((proposal, category))
                 counts[category] += 1
-                created += 1
+            _persist_many(recon, rule, accepted_for_rule)
+            created = len(accepted_for_rule)
             left = [t for t in left if t.id not in used]
             right = [t for t in right if t.id not in used]
             per_rule.append({"rule": rule.name, "strategy": rule.strategy, "groups": created})
@@ -208,34 +209,45 @@ def run_reconciliation(recon: Reconciliation, user) -> dict:
     return summary
 
 
-def _persist(recon, rule, proposal: engine.Proposal, category: str, user=None) -> MatchGroup:
-    accepted = category == MatchGroup.Category.EXACT
-    group = MatchGroup.objects.create(
-        reconciliation=recon,
-        rule=rule,
-        rule_snapshot=rule.snapshot() if rule else {},
-        kind=proposal.kind,
-        category=category,
-        status=MatchGroup.Status.ACCEPTED if accepted else MatchGroup.Status.PROPOSED,
-        left_total=proposal.left_total,
-        right_total=proposal.right_total,
-        difference=proposal.difference,
-        signature=proposal.signature,
-        reason=("; ".join([proposal.reason] + proposal.flags))[:255],
-        created_by=user,
-        decided_at=timezone.now() if accepted else None,
-    )
-    MatchGroupItem.objects.bulk_create(
-        [
-            MatchGroupItem(group=group, transaction_id=t.id, side=LEFT, flow_amount=t.flow, active=accepted)
-            for t in proposal.left
-        ]
-        + [
-            MatchGroupItem(group=group, transaction_id=t.id, side=RIGHT, flow_amount=t.flow, active=accepted)
-            for t in proposal.right
-        ]
-    )
-    return group
+def _persist_many(recon, rule, proposals: list[tuple[engine.Proposal, str]], batch_size: int = 2000):
+    """Bulk-insert match groups and their items (PostgreSQL returns primary keys from bulk_create)."""
+    snapshot = rule.snapshot() if rule else {}
+    now = timezone.now()
+    for start in range(0, len(proposals), batch_size):
+        chunk = proposals[start : start + batch_size]
+        groups = MatchGroup.objects.bulk_create(
+            [
+                MatchGroup(
+                    reconciliation=recon,
+                    rule=rule,
+                    rule_snapshot=snapshot,
+                    kind=p.kind,
+                    category=category,
+                    status=MatchGroup.Status.ACCEPTED
+                    if category == MatchGroup.Category.EXACT
+                    else MatchGroup.Status.PROPOSED,
+                    left_total=p.left_total,
+                    right_total=p.right_total,
+                    difference=p.difference,
+                    signature=p.signature,
+                    reason=("; ".join([p.reason] + p.flags))[:255],
+                    decided_at=now if category == MatchGroup.Category.EXACT else None,
+                )
+                for p, category in chunk
+            ]
+        )
+        items = []
+        for group, (p, category) in zip(groups, chunk, strict=True):
+            active = category == MatchGroup.Category.EXACT
+            items += [
+                MatchGroupItem(group=group, transaction_id=t.id, side=LEFT, flow_amount=t.flow, active=active)
+                for t in p.left
+            ]
+            items += [
+                MatchGroupItem(group=group, transaction_id=t.id, side=RIGHT, flow_amount=t.flow, active=active)
+                for t in p.right
+            ]
+        MatchGroupItem.objects.bulk_create(items, batch_size=5000)
 
 
 # --------------------------------------------------------------------------

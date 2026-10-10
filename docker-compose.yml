@@ -1,48 +1,77 @@
-# Local / evaluation stack. For production, use managed PostgreSQL and Redis,
-# TLS termination at a reverse proxy, and secrets from your vault.
+# Evaluation / single-server stack. For production prefer managed PostgreSQL and Redis,
+# TLS termination at the reverse proxy (see deploy/nginx.conf) and secrets from a vault.
+x-app: &app
+  build: .
+  env_file: .env
+  environment:
+    DATABASE_URL: postgres://ledgerguard_app:${LEDGERGUARD_APP_PASSWORD}@db:5432/ledgerguard
+    MIGRATION_DATABASE_URL: postgres://ledgerguard_owner:${LEDGERGUARD_OWNER_PASSWORD}@db:5432/ledgerguard
+    CACHE_URL: redis://redis:6379/1
+    CELERY_BROKER_URL: redis://redis:6379/0
+  volumes:
+    - media:/var/lib/ledgerguard/media
+    - backups:/var/lib/ledgerguard/backups
+    - ingest:/var/lib/ledgerguard/ingest
+  depends_on:
+    db: {condition: service_healthy}
+    redis: {condition: service_healthy}
+  restart: unless-stopped
+
 services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_DB: ledgerguard
-      POSTGRES_USER: ledgerguard
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
-    volumes: [pgdata:/var/lib/postgresql/data]
+      LEDGERGUARD_OWNER_PASSWORD: ${LEDGERGUARD_OWNER_PASSWORD:?set LEDGERGUARD_OWNER_PASSWORD}
+      LEDGERGUARD_APP_PASSWORD: ${LEDGERGUARD_APP_PASSWORD:?set LEDGERGUARD_APP_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/postgres/create_roles.sql:/docker-entrypoint-initdb.d/create_roles.sql.in:ro
+      - ./deploy/postgres/init.sh:/docker-entrypoint-initdb.d/10-ledgerguard.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ledgerguard"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ledgerguard"]
       interval: 5s
-      retries: 10
+      retries: 20
+    restart: unless-stopped
 
   redis:
     image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
+    restart: unless-stopped
 
-  web: &app
-    build: .
-    env_file: .env
-    environment:
-      DATABASE_URL: postgres://ledgerguard:${POSTGRES_PASSWORD}@db:5432/ledgerguard
-      CACHE_URL: redis://redis:6379/1
-      CELERY_BROKER_URL: redis://redis:6379/0
-      LEDGERGUARD_MEDIA_ROOT: /var/lib/ledgerguard/media
-    volumes: [media:/var/lib/ledgerguard/media]
-    ports: ["8000:8000"]
-    depends_on:
-      db: {condition: service_healthy}
-      redis: {condition: service_healthy}
+  web:
+    <<: *app
+    ports: ["127.0.0.1:8000:8000"]
 
   worker:
     <<: *app
-    ports: []
+    environment:
+      DATABASE_URL: postgres://ledgerguard_app:${LEDGERGUARD_APP_PASSWORD}@db:5432/ledgerguard
+      CACHE_URL: redis://redis:6379/1
+      CELERY_BROKER_URL: redis://redis:6379/0
+      RUN_MIGRATIONS: "0"
     command: celery -A config worker -l info
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping -d celery@$$HOSTNAME -t 10 || exit 1"]
+      interval: 60s
+      timeout: 20s
 
   beat:
     <<: *app
-    ports: []
-    command: celery -A config beat -l info
+    environment:
+      DATABASE_URL: postgres://ledgerguard_app:${LEDGERGUARD_APP_PASSWORD}@db:5432/ledgerguard
+      CACHE_URL: redis://redis:6379/1
+      CELERY_BROKER_URL: redis://redis:6379/0
+      RUN_MIGRATIONS: "0"
+    command: celery -A config beat -l info --schedule /tmp/celerybeat-schedule
+    healthcheck:
+      disable: true
 
 volumes:
   pgdata:
   media:
+  backups:
+  ingest:

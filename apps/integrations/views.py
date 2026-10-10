@@ -4,6 +4,7 @@ from django.urls import reverse
 from django.views.generic import View
 
 from apps.accounts.models import User
+from apps.core.activity import log_activity
 from apps.core.exceptions import BusinessRuleError
 from apps.core.views_mixins import InstitutionRequiredMixin, scoped_get
 from apps.imports.models import ImportProfile
@@ -69,8 +70,6 @@ class IntegrationsView(InstitutionRequiredMixin, View):
                 elif action == "toggle":
                     endpoint.is_active = not endpoint.is_active
                     endpoint.save(update_fields=["is_active", "updated_at"])
-                    from apps.core.activity import log_activity
-
                     log_activity(
                         "integration.endpoint_toggled",
                         user=request.user,

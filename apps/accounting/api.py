@@ -4,6 +4,7 @@ from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.approvals.api import ChangeControlledMixin
 from apps.core.api import InstitutionScopedViewSet
 
 from . import services
@@ -54,7 +55,8 @@ class AccountSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(exc.message_dict) from exc
 
 
-class AccountViewSet(InstitutionScopedViewSet):
+class AccountViewSet(ChangeControlledMixin, InstitutionScopedViewSet):
+    change_target = "account"
     model = Account
     serializer_class = AccountSerializer
     http_method_names = ["get", "post", "put", "patch", "head", "options"]

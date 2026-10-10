@@ -367,7 +367,116 @@ class Command(BaseCommand):
             owner=users["finance"],
         )
 
+        self._seed_extended_modules(inst, users, a, month_start, month_end, today)
+
         self.stdout.write(self.style.SUCCESS(f"Demo institution '{inst.name}' created (code {code})."))
         self.stdout.write("Users: " + ", ".join(u.username for u in users.values()))
         self.stdout.write(f"Password for all demo users: {password}")
         self.stdout.write("Change these credentials before any shared use.")
+
+    def _seed_extended_modules(self, inst, users, a, month_start, month_end, today):
+        """Fixed assets, loan and deposit listings, a regulatory workpaper and a recurring journal."""
+        from apps.accounting import recurring
+        from apps.deposits import services as deposits
+        from apps.deposits.models import DepositProduct
+        from apps.fixed_assets import services as assets
+        from apps.fixed_assets.models import AssetCategory
+        from apps.loans import services as loans
+        from apps.regulatory import services as regulatory
+
+        it = AssetCategory.objects.create(
+            institution=inst,
+            code="IT",
+            name="IT equipment",
+            cost_account=a["1401"],
+            accumulated_depreciation_account=a["1409"],
+            depreciation_expense_account=a["5501"],
+            disposal_account=a["4901"],
+            useful_life_months=36,
+        )
+        assets.create_asset(
+            inst,
+            users["accountant"],
+            category=it,
+            tag="IT-0001",
+            name="Core banking servers",
+            cost=D("18000000.00"),
+            residual_value=D("0"),
+            acquisition_date=month_start,
+            in_service_date=month_start,
+            supplier="Demo Systems Ltd",
+            invoice_reference="INV-2231",
+        )
+        assets.create_asset(
+            inst,
+            users["accountant"],
+            category=it,
+            tag="IT-0002",
+            name="Branch ATMs (3)",
+            cost=D("42000000.00"),
+            residual_value=D("2000000.00"),
+            acquisition_date=month_start,
+            in_service_date=month_start,
+        )
+
+        loan_rows = [
+            ["Account No", "Customer", "Product", "Branch", "Principal Outstanding", "Accrued Interest", "DPD"]
+        ]
+        portfolio = [
+            ("SME", 240_000_000, 0),
+            ("SME", 80_000_000, 45),
+            ("AGRIC", 50_000_000, 75),
+            ("PAYDAY", 30_000_000, 120),
+            ("SME", 20_000_000, 200),
+        ]
+        for i, (product, principal, dpd) in enumerate(portfolio * 4, start=1):
+            loan_rows.append(
+                [
+                    f"LN{i:06d}",
+                    f"Customer {i}",
+                    product,
+                    "001" if i % 2 else "002",
+                    f"{principal / 4:.2f}",
+                    "0",
+                    str(dpd),
+                ]
+            )
+        loans.load_snapshot(
+            inst,
+            users["finance"],
+            filename="loans_demo.csv",
+            data=csv(loan_rows),
+            as_of=month_end,
+            principal_account=a["1301"],
+            provision_account=a["1309"],
+        )
+
+        DepositProduct.objects.create(institution=inst, code="CUR", name="Current account", gl_account=a["2101"])
+        DepositProduct.objects.create(institution=inst, code="SAV", name="Savings account", gl_account=a["2102"])
+        DepositProduct.objects.create(institution=inst, code="FD", name="Term deposit", gl_account=a["2103"])
+        dep_rows = [["Account Number", "Account Name", "Product", "Branch", "Ledger Balance", "Dormant"]]
+        for product, total, n in (("CUR", 150_000_000, 30), ("SAV", 210_000_000, 40), ("FD", 90_000_000, 10)):
+            for i in range(n):
+                dep_rows.append(
+                    [f"{product}{i:05d}", f"Depositor {i}", product, "001", f"{total / n:.2f}", "Y" if i == 0 else "N"]
+                )
+        dep_rows.append(["CUR99999", "Overdrawn customer", "CUR", "002", "-125000.00", "N"])
+        deposits.load_snapshot(
+            inst, users["finance"], filename="deposits_demo.csv", data=csv(dep_rows), as_of=month_end
+        )
+
+        template = regulatory.install_starter_template(inst, users["finance"])
+        regulatory.prepare(inst, users["accountant"], template, month_start, month_end)
+
+        recurring.create_template(
+            inst,
+            users["finance"],
+            name="Office rent accrual",
+            description="Monthly office rent accrual",
+            lines=[
+                acc.LineInput(account=a["5601"], debit=D("1250000.00")),
+                acc.LineInput(account=a["2301"], credit=D("1250000.00")),
+            ],
+            start_date=today,
+            day_of_month=28,
+        )

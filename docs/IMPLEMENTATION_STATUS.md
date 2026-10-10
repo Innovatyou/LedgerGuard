@@ -1,50 +1,54 @@
 # Implementation plan and status
 
-The master development prompt was worked through incrementally: architecture and project structure first, then
-each module was built with its services, UI, API and tests before moving on. The prompt text supplied ended
-partway through **section 13 (Settlement reconciliation)**; requirements after that point were not available.
+The master development prompt was worked through incrementally. The supplied prompt text ended partway through
+**section 13 (Settlement reconciliation)**; the modules listed in section 5 that are specified only by name
+(loans, deposits, fixed assets, regulatory, integrations, administration) were built to standard banking practice.
+Review them against any later sections of the specification.
 
 ## Phases
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Project skeleton, settings, core utilities, tenancy, logging, health checks | Done |
-| 2 | Organisations, users, roles, permissions, MFA, throttling | Done |
-| 3 | Chart of accounts, periods, double-entry engine, approvals, reversals, ledger immutability | Done |
-| 4 | Financial reports and exports (Excel, CSV, PDF) | Done |
-| 5 | Import framework (CSV/XLSX, profiles, validation, duplicates, corrections) | Done |
-| 6 | Reconciliation engine, review workflow, statement, approval | Done |
-| 7 | Settlement reconciliation support | Done for the requirements visible in section 13 |
-| 8 | Suspense management, aging, escalations | Done |
-| 9 | Internal audit engagements, workpapers, findings, corrective actions | Done |
-| 10 | Dashboard, notifications, evidence attachments, activity log | Done |
-| 11 | Docker, CI, documentation, demo data | Done |
-| 12 | Loans, deposits, fixed assets, regulatory workpapers, integrations, administration/backups, SSO | **Not started** |
+| 1 | Project skeleton, settings, tenancy, logging, health checks | Done |
+| 2 | Organisations, users, roles, permissions, MFA, throttling, password policy | Done |
+| 3 | Chart of accounts, periods, double-entry engine, approvals, reversals, recurring journals | Done |
+| 4 | Financial reports and exports | Done |
+| 5 | Import framework | Done |
+| 6 | Reconciliation engine and workflow | Done |
+| 7 | Settlement reconciliation | Done |
+| 8 | Suspense management | Done |
+| 9 | Internal audit | Done |
+| 10 | Fixed assets (register, depreciation, disposals, GL control) | Done |
+| 11 | Loan portfolio control (classification, provisioning, GL control) | Done |
+| 12 | Deposit control totals | Done |
+| 13 | Regulatory workpapers (templates, formulas, validation, sign-off) | Done |
+| 14 | Integrations (inbound API, drop folders, logs) | Done |
+| 15 | Administration (backups, integrity checks, health, scheduled jobs) | Done |
+| 16 | Controls: branch scoping, configuration maker-checker | Done |
+| 17 | Production hardening: DB roles, CSP, container stack, performance, dependency audit, runbooks | Done |
+| 18 | Institution-side readiness (UAT, pen test, infrastructure, sign-offs) | **Open** – see `PRODUCTION_READINESS.md` |
 
 ## Status against the specification
 
-| Section | Status | Notes |
-|---|---|---|
-| 1–2 Role, identity | Done | |
-| 3 Objectives | 1–12, 14–16 done; 13 (regulatory workpapers) and 17 (external integrations) not started; 18 via Docker | |
-| 4 Technology stack | Done | Django 5.2 LTS, DRF, PostgreSQL, Celery/Redis, openpyxl, XlsxWriter, ReportLab, pytest, Ruff, Docker. Pandas/Polars were not needed: row processing is streaming Python with Decimal. Type checking (mypy) not yet configured. |
-| 5 Architecture | Done for the listed modules except `loans`, `deposits`, `fixed_assets`, `regulatory`, `integrations`, `administration` | |
-| 6 Multi-institution | Done | Row-level tenancy; isolation options documented |
-| 7 Users and access control | Done | SSO documented, not built |
-| 8 Chart of accounts | Done | Approval of account changes is recorded via `approved_by` fields but not yet a maker-checker workflow |
-| 9 Double-entry engine | Done | Recurring journal *templates* are a journal type only; scheduling of recurring journals is not built |
-| 10 Imports | Done | |
-| 11 Reconciliation | Done | Direct payment-network connectivity intentionally not assumed |
-| 12 Suspense | Done | |
-| 13 Settlements | Done for the visible text | Prompt truncated here |
+| Section | Status |
+|---|---|
+| 1–2 Role, identity | Done |
+| 3 Objectives 1–18 | Done (regulatory: workpapers only, no submission – as specified) |
+| 4 Technology stack | Done. Pandas/Polars not needed (streaming Decimal processing). Static type checking (mypy) not configured. |
+| 5 Architecture | All listed modules present |
+| 6 Multi-institution | Done; isolation options documented |
+| 7 Users and access control | Done; SSO documented, not built |
+| 8 Chart of accounts | Done, including maker-checker on changes |
+| 9 Double-entry engine | Done, including recurring templates with scheduled generation |
+| 10 Imports | Done |
+| 11 Reconciliation | Done |
+| 12 Suspense | Done |
+| 13 Settlements | Done for the visible text |
+| 14+ | Not received |
 
-## Recommended next steps
+## Possible next steps
 
-1. Fixed-asset register with depreciation runs that prepare depreciation journals.
-2. Loan and deposit control schedules reconciling sub-ledger totals to GL control accounts (reuse the
-   reconciliation engine with `CONTROL_TOTALS` sources).
-3. Regulatory workpaper templates (CBN/NDIC returns) mapped from `Account.regulatory_code`, with validation rules.
-4. Maker-checker approval for chart-of-accounts and matching-rule changes.
-5. Recurring journal scheduler (Celery beat) generating drafts from templates.
-6. SSO (OIDC/SAML) and PostgreSQL row-level security as defence in depth.
-7. mypy type checking in CI; load tests for imports above 500k rows.
+1. SSO (OIDC/SAML) if required by the institution.
+2. PostgreSQL row-level security as defence in depth for shared deployments.
+3. mypy in CI.
+4. Balance snapshot table for very large ledgers.

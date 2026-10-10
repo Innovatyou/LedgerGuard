@@ -33,10 +33,16 @@ are also recorded as `ApprovalRecord`s.
 | `settlements` | Settlement-record validation, batch summaries, default settlement rules | imports, reconciliation |
 | `suspense` | Suspense items, aging, escalation, resolution workflow, clearing-journal preparation | accounting, reconciliation, notifications |
 | `audit` | Engagements, workpapers, findings, corrective actions | core, accounts |
+| `fixed_assets` | Asset register, depreciation runs, disposals, register-to-GL control | accounting |
+| `loans` | Loan listing upload, DPD classification, provisioning, GL control, provision journals | accounting |
+| `deposits` | Deposit listing upload, product mapping, control totals vs GL | accounting |
+| `regulatory` | Workpaper templates, formula evaluation, validation rules, sign-off | accounting |
+| `integrations` | Keyed inbound file API, drop folders, integration logs | imports |
+| `administration` | Backups, integrity checks, health, scheduled-job runner, load test | accounting, imports, integrations |
 | `reporting` | Dashboard, report views, Excel/CSV/PDF export | all of the above (read-only) |
 
 There are no circular imports: dependencies flow downwards in the table. Celery tasks (`imports.tasks`,
-`reconciliation.tasks`, `suspense.tasks`) wrap the same service functions used by the web and API layers.
+`reconciliation.tasks`, `suspense.tasks`, `accounting.tasks`, `administration.tasks`) wrap the same service functions used by the web and API layers.
 
 ## Money
 
@@ -114,3 +120,13 @@ settlement date, batch reference and reversal flag. The `FEE_NET` strategy group
 the batch's net settlement against the bank credit (by reference or narration). The match difference is
 computed from flow amounts, so if a profile maps the gross amount as the record amount, fees appear as a
 difference that must be explained rather than being silently absorbed.
+
+## Month-end controls
+
+* **Fixed assets** – depreciation runs and disposals create journals that follow the normal approval workflow; the
+  register counts depreciation only after its journal is posted (`sync_statuses` aligns run/disposal status with
+  journal outcomes). `register_control` compares register cost and accumulated depreciation with the GL accounts.
+* **Loans / deposits** – listings are parsed strictly (any invalid row rejects the file), stored as snapshots per
+  date (a signed-off snapshot cannot be replaced) and compared with GL balances as at the snapshot date.
+* **Regulatory** – each line sums posted ledger entries selected by regulatory code, subcategory, account code
+  and/or category, or evaluates a formula over other lines; validation rules compare expressions with a tolerance.

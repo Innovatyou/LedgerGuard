@@ -318,3 +318,14 @@ def test_account_ui_creates_change_request(client, institution, users, coa):
     assert resp.status_code == 302
     assert Account.objects.get(pk=coa["5601"].pk).name == "Rent and premises"
     assert ChangeRequest.objects.filter(target_type="account", status="PENDING").count() == 1
+
+
+def test_api_configuration_changes_need_approval(institution, users, coa):
+    api = APIClient()
+    api.force_authenticate(users["manager"])
+    resp = api.patch(f"/api/v1/accounts/{coa['5601'].pk}/", {"name": "Via API"}, format="json")
+    assert resp.status_code == 202 and resp.json()["change_request"].startswith("CHG-")
+    assert Account.objects.get(pk=coa["5601"].pk).name == "Rent and premises"
+    api.force_authenticate(users["admin"])
+    resp = api.post("/api/v1/matching-rules/", {"name": "API rule", "strategy": "EXACT_REFERENCE"}, format="json")
+    assert resp.status_code == 202 and not MatchingRule.objects.exists()

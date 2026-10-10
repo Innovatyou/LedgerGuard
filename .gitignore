@@ -8,3 +8,5 @@ staticfiles/
 .ruff_cache/
 *.sqlite3
 .DS_Store
+backups/
+ingest/

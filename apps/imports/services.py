@@ -318,7 +318,9 @@ def commit_batch(batch: ImportBatch, user, allow_partial: bool = False) -> Impor
             raise BusinessRuleError(
                 "Some rows were imported by another batch in the meantime. Re-validate the batch and try again."
             ) from exc
-        ImportRow.objects.filter(pk__in=[r.pk for r in rows]).update(status=ImportRow.Status.COMMITTED)
+        batch.rows.filter(status__in=[ImportRow.Status.VALID, ImportRow.Status.WARNING]).update(
+            status=ImportRow.Status.COMMITTED
+        )
         # Validation counts are kept as the import summary; record what was committed.
         batch.committed_rows = len(rows)
         batch.summary = {**batch.summary, "COMMITTED": len(rows)}

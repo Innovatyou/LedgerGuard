@@ -158,6 +158,10 @@ CACHES = {
     )
 }
 
+# Flash messages can carry one-time secrets (temporary passwords, integration keys):
+# keep them server-side rather than in a signed-but-readable cookie.
+MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
+
 # --- REST framework -------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

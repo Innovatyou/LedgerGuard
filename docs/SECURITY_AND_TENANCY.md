@@ -25,7 +25,7 @@ For institutions whose policies forbid co-mingled data:
 1. **Dedicated deployment per institution** (recommended for commercial banks): one stack and database per bank.
    No code changes are required; create a single institution.
 2. **Database per tenant**: separate PostgreSQL databases with a database router; operationally heavier.
-3. **PostgreSQL row-level security** as defence in depth: enable RLS on scoped tables with a policy on
+3. **PostgreSQL row-level security** as additional defence in depth: enable RLS on scoped tables with a policy on
    `institution_id = current_setting('ledgerguard.institution_id')::bigint` and set that variable per request in
    middleware. This is not enabled in the current build.
 
@@ -34,6 +34,13 @@ For institutions whose policies forbid co-mingled data:
 * Permissions are action codes (37 codes in `apps/accounts/permissions.py`) bundled into roles; users hold roles through
   memberships per institution. Effective permissions are the union of active memberships. Custom roles can be
   created per institution.
+* Branch scope: a membership limited to a branch restricts journals (header and lines), ledger reports, fixed
+  assets, loan/deposit listings and the corresponding API endpoints to that branch; users cannot prepare, approve
+  or post journals touching other branches. Reconciliations, suspense items and audit records have no branch
+  dimension and are institution-wide.
+* Configuration control: with `require_config_approval` on (default), changes to accounts, matching rules,
+  loan classification bands, deposit product mappings and institution settings become change requests applied only
+  after approval by a different user holding `config.approve` (web and API).
 * Maker-checker: when `require_independent_approval` is on (default), the preparer of a journal, reconciliation,
   suspense resolution, workpaper or period close cannot approve/post/reopen it (`approvals.services.assert_independent`).
 * Least privilege defaults: e.g. accountants cannot approve or post; reconciliation officers cannot approve
@@ -41,7 +48,8 @@ For institutions whose policies forbid co-mingled data:
 
 ## Authentication
 
-* Passwords: Django PBKDF2 hashing, minimum 12 characters plus common/numeric/similarity validators.
+* Passwords: Django PBKDF2 hashing, minimum 12 characters plus common/numeric/similarity validators; new users and
+  administrator resets must choose a new password at next sign-in.
 * Login throttling: per username+IP and per username lockout (configurable count and duration; cache-backed —
   use Redis in production so limits apply across workers).
 * MFA: TOTP (RFC 6238) enrolment and verification; the session is only authenticated after the second factor;
@@ -66,6 +74,11 @@ The build ships with local accounts and TOTP. To integrate an institution's iden
 * Uploaded files are stored outside the web root (`LEDGERGUARD_MEDIA_ROOT`) under checksum-based names; macro-enabled
   workbooks are rejected and workbooks are parsed values-only, so macros and formulas are never executed.
 * Exports neutralise spreadsheet formula injection.
+* Content-Security-Policy allows scripts only from the application origin (no inline scripts); frames are denied;
+  authentication and API responses are `no-store`. One-time secrets (temporary passwords, integration keys) are
+  shown once via server-side session messages and only hashes of integration keys are stored.
+* Integration endpoints use hashed bearer keys, IP allow-lists and rate limiting, and act as a named service user so
+  every inbound file is attributable and passes normal import validation.
 * Evidence uploads are restricted by extension and size; downloads are permission-checked and logged.
 * The activity log, approval records and ledger entries are append-only at database level.
 * Secrets are read from environment variables; no credentials are stored in the repository.
@@ -75,8 +88,10 @@ The build ships with local accounts and TOTP. To integrate an institution's iden
 * `DJANGO_DEBUG=False`, long random `DJANGO_SECRET_KEY`, explicit `DJANGO_ALLOWED_HOSTS` and
   `DJANGO_CSRF_TRUSTED_ORIGINS`.
 * Terminate TLS at a reverse proxy; set `DJANGO_SECURE_SSL_REDIRECT=True` and `DJANGO_HSTS_SECONDS` once HTTPS is verified.
-* Run the application database role **without** superuser rights so it cannot drop the append-only triggers;
-  use a separate migration role.
+* Use the two database roles from `deploy/postgres/create_roles.sql`: the owner role runs migrations
+  (`MIGRATION_DATABASE_URL`), the application role (`DATABASE_URL`) has data access only. `harden_database`
+  (run automatically by the container entrypoint) removes UPDATE/DELETE/TRUNCATE on the ledger, approval-record and
+  activity-log tables. Verified: the application role cannot update, delete, truncate, or disable/drop triggers.
 * Use Redis for `CACHE_URL` (throttling across workers) and Celery.
 * Encrypt the database volume and backups; restrict access to the media volume.
 * Ship JSON logs to the institution's SIEM; alert on `auth.login_locked`, `period.reopened`, `reconciliation.reopened`

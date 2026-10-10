@@ -11,7 +11,10 @@ from apps.core.views_mixins import InstitutionRequiredMixin, run_action, scoped_
 from . import services
 from .forms import ImportProfileForm, UploadForm
 from .models import STANDARD_FIELDS, ImportBatch, ImportProfile, ImportRow, SourceTransaction
-from .tasks import validate_batch_task
+from .tasks import commit_batch_task, validate_batch_task
+
+BACKGROUND_BYTES = 2 * 1024 * 1024
+BACKGROUND_ROWS = 20_000
 
 
 class ProfileListView(InstitutionRequiredMixin, ListView):
@@ -116,7 +119,7 @@ class BatchActionView(InstitutionRequiredMixin, View):
         action = request.POST.get("action")
         back = reverse("imports:batch-detail", args=[batch.pk])
         if action == "validate":
-            if batch.size > 5 * 1024 * 1024:
+            if batch.size > BACKGROUND_BYTES:
                 validate_batch_task.delay(batch.pk, request.user.pk)
                 messages.info(request, "Validation queued; refresh this page shortly.")
                 return redirect(back)
@@ -125,6 +128,10 @@ class BatchActionView(InstitutionRequiredMixin, View):
             )
         if action == "commit":
             partial = request.POST.get("allow_partial") == "1"
+            if batch.total_rows > BACKGROUND_ROWS:
+                commit_batch_task.delay(batch.pk, request.user.pk, partial)
+                messages.info(request, "Commit queued for background processing; refresh this page shortly.")
+                return redirect(back)
             return run_action(
                 request,
                 lambda: services.commit_batch(batch, request.user, allow_partial=partial),
