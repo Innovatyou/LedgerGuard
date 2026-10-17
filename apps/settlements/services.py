@@ -137,6 +137,14 @@ DEFAULT_SETTLEMENT_RULES = [
         auto_accept=True,
     ),
     dict(
+        name="Settlement: bulk amount finder (no session data)",
+        strategy=Strategy.BULK_SUBSET,
+        priority=90,
+        date_tolerance_days=1,
+        max_group_size=5000,
+        auto_accept=False,
+    ),
+    dict(
         name="Settlement: reversal pairs",
         strategy=Strategy.REVERSAL_PAIR,
         priority=40,
@@ -160,3 +168,123 @@ def install_default_rules(institution, user) -> int:
         created += was_created
     log_activity("settlement.default_rules_installed", user=user, institution=institution, details={"created": created})
     return created
+
+
+# --------------------------------------------------------------------------
+# Session bulk settlement summary
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class SessionRow:
+    session_date: object
+    session: int  # 0 = whole day (no session calendar configured)
+    direction: str  # Inward / Outward
+    items: int = 0
+    items_total: Decimal = ZERO
+    accepted: int = 0
+    proposed: int = 0
+    bulk_lines: int = 0
+    bulk_total: Decimal = ZERO
+
+    @property
+    def difference(self) -> Decimal:
+        return self.items_total - self.bulk_total
+
+    @property
+    def status(self) -> str:
+        if self.accepted == self.items:
+            return "Matched"
+        if self.accepted + self.proposed == self.items:
+            return "Proposed"
+        if self.accepted or self.proposed:
+            return "Partly matched"
+        return "Unmatched"
+
+
+@dataclass
+class SessionReport:
+    rule: MatchingRule | None
+    rows: list[SessionRow]
+    untimed_items: int
+    untimed_total: Decimal
+    unmatched_bulk: list  # (SourceTransaction, flow)
+
+
+def session_rule(recon):
+    from apps.reconciliation.services import rules_for
+
+    return next((r for r in rules_for(recon) if r.strategy == Strategy.SESSION_BULK and r.session_cutoffs), None)
+
+
+def session_report(recon) -> SessionReport:
+    """
+    Per settlement session and direction: number and total of detail items
+    (e.g. GL transfers and charges), how many are matched, and the bulk lines
+    they are matched to. Uses the reconciliation's session bulk rule for the
+    session calendar and bulk side; without one, items are grouped by day.
+    """
+    from apps.reconciliation.engine import _cutoffs, session_of
+    from apps.reconciliation.models import MatchGroup
+    from apps.reconciliation.services import LEFT, RIGHT, flow_of, side_queryset
+
+    rule = session_rule(recon)
+    bulk_side = RIGHT if rule is not None and rule.bulk_side == "RIGHT" else LEFT
+    detail_side = RIGHT if bulk_side == LEFT else LEFT
+    cutoffs = _cutoffs(rule) if rule else []
+
+    links = MatchGroupItem.objects.filter(
+        group__reconciliation=recon,
+        group__status__in=[MatchGroup.Status.PROPOSED, MatchGroup.Status.ACCEPTED],
+    ).values_list("transaction_id", "group_id", "group__status", "side", "flow_amount")
+    group_of: dict[int, tuple[int, str]] = {}
+    bulk_by_group: dict[int, list[tuple[int, Decimal]]] = {}
+    for txn_id, group_id, status, side, flow in links:
+        if side == bulk_side:
+            bulk_by_group.setdefault(group_id, []).append((txn_id, flow))
+        else:
+            group_of[txn_id] = (group_id, status)
+
+    rows: dict = OrderedDict()
+    line_owner: dict = {}
+    untimed, untimed_total = 0, ZERO
+    details = side_queryset(recon, detail_side).order_by("transaction_date", "transaction_time", "source_row_number")
+    for txn in details.iterator(chunk_size=5000):
+        flow = flow_of(recon, detail_side, txn)
+        if flow == ZERO:
+            continue
+        if cutoffs and txn.transaction_time is None:
+            untimed += 1
+            untimed_total += flow
+            continue
+        if cutoffs:
+            session_date, number = session_of(txn.transaction_date, txn.transaction_time, cutoffs)
+        else:
+            session_date, number = txn.transaction_date, 0
+        direction = "Inward" if flow > 0 else "Outward"
+        key = (session_date, number, direction)
+        row = rows.setdefault(key, SessionRow(session_date, number, direction))
+        row.items += 1
+        row.items_total += flow
+        link = group_of.get(txn.pk)
+        if link:
+            group_id, status = link
+            if status == MatchGroup.Status.ACCEPTED:
+                row.accepted += 1
+            else:
+                row.proposed += 1
+            for line_id, line_flow in bulk_by_group.get(group_id, []):
+                # A bulk line is counted once, in the first session whose items it settles.
+                if line_id not in line_owner:
+                    line_owner[line_id] = key
+                    row.bulk_lines += 1
+                    row.bulk_total += line_flow
+
+    matched_lines = {i for lines in bulk_by_group.values() for i, _ in lines}
+    unmatched_bulk = [
+        (t, flow_of(recon, bulk_side, t))
+        for t in side_queryset(recon, bulk_side).order_by("transaction_date", "id")
+        if t.pk not in matched_lines
+    ]
+    ordered = sorted(rows.values(), key=lambda r: (r.session_date, r.session, r.direction))
+    return SessionReport(rule, ordered, untimed, untimed_total, unmatched_bulk)

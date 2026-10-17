@@ -16,6 +16,17 @@ class MatchingRuleForm(forms.ModelForm):
         choices=[(f, f) for f in sorted(COMPOSITE_FIELDS)], required=False, widget=forms.CheckboxSelectMultiple
     )
 
+    session_cutoffs_text = forms.CharField(
+        required=False,
+        label="Session cut-off times",
+        help_text="Session bulk: comma-separated HH:MM times in increasing order, e.g. 03:00, 06:00, 09:00.",
+    )
+    fee_keywords_text = forms.CharField(
+        required=False,
+        label="Fee keywords",
+        help_text="Session bulk: comma-separated narration words for charge lines, e.g. CHARGE, FEE, VAT.",
+    )
+
     class Meta:
         model = MatchingRule
         fields = [
@@ -32,8 +43,45 @@ class MatchingRuleForm(forms.ModelForm):
             "composite_fields",
             "max_group_size",
             "similarity_threshold",
+            "bulk_side",
+            "session_boundary_minutes",
             "description",
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["session_cutoffs_text"].initial = ", ".join(self.instance.session_cutoffs or [])
+        self.fields["fee_keywords_text"].initial = ", ".join(self.instance.fee_keywords or [])
+        self.fields["bulk_side"].required = False
+        self.fields["session_boundary_minutes"].required = False
+
+    @staticmethod
+    def _split(text):
+        return [p.strip() for p in (text or "").split(",") if p.strip()]
+
+    def clean(self):
+        cleaned = super().clean()
+        cleaned["bulk_side"] = cleaned.get("bulk_side") or "LEFT"
+        if cleaned.get("session_boundary_minutes") is None:
+            cleaned["session_boundary_minutes"] = 0
+        cutoffs = self._split(cleaned.pop("session_cutoffs_text", ""))
+        cleaned["session_cutoffs"] = [c.zfill(5) if len(c) == 4 else c for c in cutoffs]
+        cleaned["fee_keywords"] = [k.upper() for k in self._split(cleaned.pop("fee_keywords_text", ""))]
+        return cleaned
+
+    def _post_clean(self):
+        # The list fields are not in Meta.fields; copy them onto the instance before model validation.
+        self.instance.session_cutoffs = self.cleaned_data.get("session_cutoffs", [])
+        self.instance.fee_keywords = self.cleaned_data.get("fee_keywords", [])
+        super()._post_clean()
+
+    def _update_errors(self, errors):
+        # Model validation reports the list fields by model name; show them on the text inputs.
+        if hasattr(errors, "error_dict"):
+            for name in ("session_cutoffs", "fee_keywords"):
+                if name in errors.error_dict:
+                    errors.error_dict[f"{name}_text"] = errors.error_dict.pop(name)
+        super()._update_errors(errors)
 
 
 class ReconciliationForm(forms.ModelForm):

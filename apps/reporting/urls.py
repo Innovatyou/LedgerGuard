@@ -11,5 +11,10 @@ urlpatterns = [
     path("reports/income-statement/", views.IncomeStatementView.as_view(), name="income-statement"),
     path("reports/financial-position/", views.FinancialPositionView.as_view(), name="financial-position"),
     path("reports/reconciliation/<int:pk>/", views.ReconciliationStatementView.as_view(), name="recon-statement"),
+    path(
+        "reports/reconciliation/<int:pk>/sessions/",
+        views.SettlementSessionReportView.as_view(),
+        name="recon-sessions",
+    ),
     path("reports/suspense-aging/", views.SuspenseAgingReportView.as_view(), name="suspense-aging"),
 ]

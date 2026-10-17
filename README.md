@@ -114,6 +114,7 @@ Sample bank statement, GL and settlement layouts are created by `seed_demo` (see
 - [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) – what is done, what the institution must still do, known limitations
 - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) – deployment, upgrades, scheduled jobs, backups and restore, monitoring, incidents
 - [`docs/UAT_PLAN.md`](docs/UAT_PLAN.md) – pilot acceptance scenarios and exit criteria
+- [`docs/BULK_SETTLEMENT.md`](docs/BULK_SETTLEMENT.md) – reconciling NIP/NIBSS bulk session settlements against individual GL items
 - [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) – measured volumes and timings
 
 ## Supported runtime

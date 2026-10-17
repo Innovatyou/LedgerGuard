@@ -37,8 +37,10 @@ described. Items in the second table cannot be completed in code; they need the 
 
 ## Known limitations
 
-* Reconciliation matching for one-to-many/many-to-one relies on shared references; arbitrary subset-sum matching is
-  not attempted (by design – it is not verifiable).
+* One-to-many/many-to-one matching relies on shared references. Bulk settlement lines without references are
+  matched by settlement session (needs a time of day per item) or by the bounded amount finder, whose results always
+  need a person's confirmation; the finder examines at most 60 items per line outside consecutive runs.
+* Settlement session cut-off times must be configured per institution; none are shipped.
 * Regulatory templates are workpapers; the bundled template is illustrative and must be replaced with the
   institution's validated return definitions. No submission to regulators.
 * PostgreSQL row-level security is not enabled (tenant isolation is enforced in application queries and tested);

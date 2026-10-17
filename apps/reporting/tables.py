@@ -222,3 +222,55 @@ def aging_table(report, institution, user) -> Table:
         table.notes.append(f"{label}: {count} item(s), {total:,.2f}")
     table.totals = ["Total", "", None, "", report.total, "", None, "", "", ""]
     return table
+
+
+def session_table(report, recon, institution, user) -> Table:
+    rule = report.rule
+    calendar = ", ".join(rule.session_cutoffs) if rule else "none (grouped by day)"
+    table = Table(
+        title=f"Settlement Sessions {recon.reference}",
+        subtitle=f"{recon.name} – {recon.period_start:%d %b %Y} to {recon.period_end:%d %b %Y} ({recon.currency})",
+        columns=[
+            Column("Session date", "date", 12),
+            Column("Session", width=10),
+            Column("Direction", width=10),
+            Column("Items", "int", 8),
+            Column("Items total", "money"),
+            Column("Matched", "int", 8),
+            Column("Proposed", "int", 8),
+            Column("Bulk lines", "int", 8),
+            Column("Bulk total", "money"),
+            Column("Difference", "money"),
+            Column("Status", width=14),
+        ],
+        institution=institution.name,
+        generated_by=str(user),
+    )
+    for r in report.rows:
+        table.rows.append(
+            [
+                r.session_date,
+                str(r.session) if r.session else "Day",
+                r.direction,
+                r.items,
+                r.items_total,
+                r.accepted,
+                r.proposed,
+                r.bulk_lines,
+                r.bulk_total,
+                r.difference,
+                r.status,
+            ]
+        )
+    for txn, flow in report.unmatched_bulk:
+        ref = txn.transaction_id or txn.external_reference or txn.narration[:40]
+        table.rows.append(
+            [txn.transaction_date, "—", f"Unmatched line {ref}", 0, ZERO, 0, 0, 1, flow, -flow, "Unmatched"]
+        )
+    table.notes.append(f"Session cut-off times: {calendar}. Amounts are inflow-positive.")
+    if report.untimed_items:
+        table.notes.append(
+            f"{report.untimed_items} item(s) totalling {report.untimed_total:,.2f} have no time of day and cannot be "
+            "placed in a session; map a time column or derive the time from the reference in the import profile."
+        )
+    return table

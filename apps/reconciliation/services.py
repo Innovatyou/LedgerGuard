@@ -112,6 +112,8 @@ def to_engine(recon, side, txn) -> engine.Txn:
         net_amount=txn.net_amount,
         is_reversal=txn.is_reversal,
         suspected_duplicate=txn.is_suspected_duplicate,
+        time_of_day=txn.transaction_time,
+        row=txn.source_row_number,
     )
 
 

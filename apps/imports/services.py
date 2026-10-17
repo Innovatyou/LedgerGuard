@@ -289,6 +289,7 @@ def commit_batch(batch: ImportBatch, user, allow_partial: bool = False) -> Impor
                     norm_transaction_id=n["norm_transaction_id"],
                     norm_external_reference=n["norm_external_reference"],
                     transaction_date=n["transaction_date"],
+                    transaction_time=n.get("transaction_time"),
                     value_date=n.get("value_date"),
                     posting_date=n.get("posting_date"),
                     debit_amount=n["debit_amount"],

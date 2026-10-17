@@ -2,12 +2,12 @@
 
 import hashlib
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from apps.core.money import ZERO, AmountParseError, parse_amount
 
-from .models import AmountMode, Side
+from .models import AmountMode, Side, TimeFromReference
 
 DEFAULT_DATE_FORMATS = [
     "%Y-%m-%d",
@@ -34,6 +34,71 @@ class RowError(ValueError):
     pass
 
 
+_TIME = re.compile(r"(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?\s*([AP]M)?", re.IGNORECASE)
+# NIP session ID: 6-digit sending institution code, YYMMDDHHMMSS, 12-digit unique number.
+NIP_SESSION_ID = re.compile(
+    r"(?<!\d)\d{6}(?P<YY>\d{2})(?P<MO>\d{2})(?P<DD>\d{2})(?P<HH>\d{2})(?P<MM>\d{2})(?P<SS>\d{2})\d{12}(?!\d)"
+)
+
+
+def parse_time(value) -> time | None:
+    """Time of day from '14:32', '14:32:05', '2:32 PM' or a timestamp such as '2026-10-17 14:32:05'."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.time().replace(microsecond=0)
+    if isinstance(value, time):
+        return value.replace(microsecond=0)
+    text = str(value).strip()
+    if not text:
+        return None
+    matches = list(_TIME.finditer(text))
+    if not matches:
+        raise RowError(f"Unrecognised time {text!r}")
+    m = matches[-1]
+    hour, minute, second = int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
+    meridiem = (m.group(4) or "").upper()
+    if meridiem:
+        if not 1 <= hour <= 12:
+            raise RowError(f"Unrecognised time {text!r}")
+        hour = hour % 12 + (12 if meridiem == "PM" else 0)
+    if hour > 23 or minute > 59 or second > 59:
+        raise RowError(f"Unrecognised time {text!r}")
+    return time(hour, minute, second)
+
+
+def time_from_reference(texts, mode: str, pattern: str = "", txn_date: date | None = None) -> time | None:
+    """
+    Derive the time of day embedded in a reference (e.g. a NIP session ID).
+
+    Only a candidate whose embedded date is valid (and, for NIP IDs, within
+    three days of the transaction date) is accepted, so an unrelated number
+    that happens to have 30 digits is not misread as a timestamp.
+    """
+    if mode == TimeFromReference.NIP:
+        regex = NIP_SESSION_ID
+    elif mode == TimeFromReference.PATTERN and pattern:
+        try:
+            regex = re.compile(pattern)
+        except re.error:
+            return None
+    else:
+        return None
+    for text in texts:
+        for m in regex.finditer(text or ""):
+            parts = m.groupdict()
+            try:
+                found = time(int(parts["HH"]), int(parts["MM"]), int(parts.get("SS") or 0))
+                if parts.get("YY") and parts.get("MO") and parts.get("DD"):
+                    embedded = date(2000 + int(parts["YY"]), int(parts["MO"]), int(parts["DD"]))
+                    if txn_date and abs((embedded - txn_date).days) > 3:
+                        continue
+            except (KeyError, TypeError, ValueError):
+                continue
+            return found
+    return None
+
+
 def parse_date(value, formats=None) -> date | None:
     if value is None:
         return None
@@ -55,6 +120,10 @@ def parse_date(value, formats=None) -> date | None:
             return datetime.strptime(text, fmt).date()
         except ValueError:
             continue
+    # A date followed by a time ("17/10/2026 14:32:05"): parse the date part.
+    head, _, tail = text.partition(" ")
+    if tail and _TIME.search(tail):
+        return parse_date(head, formats)
     # Excel serial date numbers that reached us as text
     if re.fullmatch(r"\d{5}(\.0+)?", text):
         serial = int(float(text))
@@ -194,6 +263,32 @@ def normalize_row(raw: dict, profile, places: int = 2):
     channel = _text(raw, mapping, "channel").upper()
     out["channel"] = channel or profile.channel or ""
     out["is_reversal"] = _text(raw, mapping, "is_reversal").upper() in _TRUE
+
+    # Time of day: a mapped time column, else a time part in the date cell, else the reference.
+    txn_time = None
+    time_text = _text(raw, mapping, "transaction_time")
+    date_text = _text(raw, mapping, "transaction_date")
+    if time_text:
+        source_values["transaction_time"] = time_text
+        try:
+            txn_time = parse_time(time_text)
+        except RowError as exc:
+            errors.append(f"transaction_time: {exc}")
+    elif _TIME.search(date_text.partition("T")[2] or date_text.partition(" ")[2]):
+        try:
+            txn_time = parse_time(date_text)
+        except RowError:
+            txn_time = None
+    if txn_time is None and not time_text:
+        txn_time = time_from_reference(
+            [out["transaction_id"], out["external_reference"], out["narration"]],
+            getattr(profile, "time_from_reference", TimeFromReference.NONE),
+            getattr(profile, "reference_time_pattern", ""),
+            txn_date,
+        )
+        if txn_time is not None:
+            source_values["transaction_time"] = "derived from reference"
+    out["transaction_time"] = txn_time
     out["source_values"] = source_values
     return out, errors
 
@@ -229,7 +324,7 @@ def to_jsonable(normalized: dict) -> dict:
     for key, value in normalized.items():
         if isinstance(value, Decimal):
             out[key] = str(value)
-        elif isinstance(value, date):
+        elif isinstance(value, date | time):
             out[key] = value.isoformat()
         else:
             out[key] = value
@@ -241,6 +336,8 @@ def from_jsonable(data: dict) -> dict:
     for key in ("transaction_date", "value_date", "posting_date", "settlement_date"):
         if out.get(key):
             out[key] = date.fromisoformat(out[key])
+    if out.get("transaction_time"):
+        out["transaction_time"] = time.fromisoformat(out["transaction_time"])
     for key in (
         "debit_amount",
         "credit_amount",

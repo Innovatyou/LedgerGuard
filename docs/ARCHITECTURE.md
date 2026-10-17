@@ -121,6 +121,12 @@ the batch's net settlement against the bank credit (by reference or narration). 
 computed from flow amounts, so if a profile maps the gross amount as the record amount, fees appear as a
 difference that must be explained rather than being silently absorbed.
 
+**Bulk sessions**: when the settlement account shows one bulk line per NIP/NIBSS session while the GL shows
+individual transfers and charges, `SESSION_BULK` groups GL items by session (from a configured cut-off calendar
+and each item's time of day, read from a column or derived from the NIP session ID) and direction, and matches the
+group total to one bulk line. `BULK_SUBSET` finds consecutive runs or bounded combinations of items adding up to a
+bulk line when no time is available (never auto-accepted). See `BULK_SETTLEMENT.md`.
+
 ## Month-end controls
 
 * **Fixed assets** – depreciation runs and disposals create journals that follow the normal approval workflow; the

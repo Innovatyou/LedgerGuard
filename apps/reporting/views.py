@@ -195,6 +195,20 @@ class ReconciliationStatementView(ReportView):
         )
 
 
+class SettlementSessionReportView(ReportView):
+    permission_required = "recon.view"
+    template_name = "reporting/table_report.html"
+    report_name = "settlement_sessions"
+
+    def build(self, request, pk):
+        from apps.settlements.services import session_report
+
+        recon = scoped_get(request, Reconciliation, pk=pk)
+        return {"title": f"Settlement sessions {recon.reference}"}, tables.session_table(
+            session_report(recon), recon, self.institution, request.user
+        )
+
+
 class SuspenseAgingReportView(ReportView):
     permission_required = "suspense.view"
     template_name = "reporting/table_report.html"

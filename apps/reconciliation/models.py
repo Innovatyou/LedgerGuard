@@ -1,6 +1,8 @@
+import re
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 
@@ -22,6 +24,8 @@ class Strategy(models.TextChoices):
     FEE_NET = "FEE_NET", "Gross / fee / net settlement"
     REVERSAL_PAIR = "REVERSAL_PAIR", "Reversal and counter-entry (same side)"
     NARRATION_SIMILARITY = "NARRATION_SIMILARITY", "Similar narration (fuzzy, always manual review)"
+    SESSION_BULK = "SESSION_BULK", "Session bulk settlement (items per settlement session vs one bulk line)"
+    BULK_SUBSET = "BULK_SUBSET", "Bulk amount finder (items adding up to a bulk line; always reviewed)"
 
 
 # Strategies whose unique, zero-difference results may be auto-accepted when the rule allows it.
@@ -34,6 +38,7 @@ AUTO_ELIGIBLE = {
     Strategy.MANY_TO_ONE,
     Strategy.FEE_NET,
     Strategy.REVERSAL_PAIR,
+    Strategy.SESSION_BULK,
 }
 
 REFERENCE_FIELDS = {
@@ -84,6 +89,29 @@ class MatchingRule(InstitutionScopedModel):
     composite_fields = models.JSONField(default=list, blank=True)
     max_group_size = models.PositiveIntegerField(default=50)
     similarity_threshold = models.DecimalField(max_digits=4, decimal_places=2, default=Decimal("0.85"))
+    bulk_side = models.CharField(
+        max_length=5,
+        choices=[("LEFT", "Left (e.g. settlement account statement)"), ("RIGHT", "Right")],
+        default="LEFT",
+        help_text="Session bulk / amount finder: the side that shows bulk lines.",
+    )
+    session_cutoffs = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Session bulk: settlement session cut-off times, e.g. ["02:00", "05:00", "08:00", ...]. '
+        "A transaction belongs to the first session whose cut-off is at or after its time; "
+        "items after the last cut-off belong to the first session of the next day.",
+    )
+    session_boundary_minutes = models.PositiveIntegerField(
+        default=0,
+        help_text="Session bulk: items this close to a cut-off may have settled in the neighbouring session.",
+    )
+    fee_keywords = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Session bulk: narration words identifying charge lines, e.g. ["CHARGE", "FEE", "VAT"]. '
+        "Used when charges settle as a separate bulk line.",
+    )
     description = models.TextField(blank=True)
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
@@ -94,6 +122,23 @@ class MatchingRule(InstitutionScopedModel):
 
     def __str__(self):
         return f"{self.priority}: {self.name}"
+
+    def clean(self):
+        errors = {}
+        cutoffs = self.session_cutoffs or []
+        if not isinstance(cutoffs, list) or not all(
+            isinstance(c, str) and re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", c) for c in cutoffs
+        ):
+            errors["session_cutoffs"] = 'Enter cut-off times as a list of "HH:MM" values.'
+        elif cutoffs != sorted(set(cutoffs)):
+            errors["session_cutoffs"] = "Cut-off times must be in increasing order without repeats."
+        elif self.strategy == Strategy.SESSION_BULK and not cutoffs:
+            errors["session_cutoffs"] = "Session bulk matching needs the settlement session cut-off times."
+        keywords = self.fee_keywords or []
+        if not isinstance(keywords, list) or not all(isinstance(k, str) and k.strip() for k in keywords):
+            errors["fee_keywords"] = "Enter fee keywords as a list of words."
+        if errors:
+            raise ValidationError(errors)
 
     def snapshot(self):
         return {
@@ -108,6 +153,11 @@ class MatchingRule(InstitutionScopedModel):
             "right_reference_field": self.right_reference_field,
             "composite_fields": self.composite_fields,
             "similarity_threshold": str(self.similarity_threshold),
+            "max_group_size": self.max_group_size,
+            "bulk_side": self.bulk_side,
+            "session_cutoffs": self.session_cutoffs,
+            "session_boundary_minutes": self.session_boundary_minutes,
+            "fee_keywords": self.fee_keywords,
         }
 
 

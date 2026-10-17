@@ -59,8 +59,15 @@ STANDARD_FIELDS = {
     "tax_amount": "Tax amount",
     "net_amount": "Net settlement amount",
     "settlement_date": "Settlement date",
+    "transaction_time": "Transaction / posting time",
     "is_reversal": "Reversal flag",
 }
+
+
+class TimeFromReference(models.TextChoices):
+    NONE = "NONE", "Do not derive"
+    NIP = "NIP", "NIP session ID (30 digits: 6 institution + YYMMDDHHMMSS + 12)"
+    PATTERN = "PATTERN", "Custom pattern"
 
 
 class ImportProfile(InstitutionScopedModel):
@@ -83,6 +90,17 @@ class ImportProfile(InstitutionScopedModel):
     indicator_credit_values = models.JSONField(default=list, blank=True)
     default_currency = models.CharField(max_length=3, default="NGN")
     default_account_reference = models.CharField(max_length=60, blank=True)
+    time_from_reference = models.CharField(
+        max_length=8,
+        choices=TimeFromReference.choices,
+        default=TimeFromReference.NONE,
+        help_text="When the file has no time column, derive the transaction time from the reference.",
+    )
+    reference_time_pattern = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Custom pattern: a regular expression with named groups HH, MM and optionally SS, YY, MO, DD.",
+    )
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="+")
 
@@ -193,6 +211,9 @@ class SourceTransaction(InstitutionScopedModel):
     norm_transaction_id = models.CharField(max_length=120, blank=True, db_index=True)
     norm_external_reference = models.CharField(max_length=120, blank=True, db_index=True)
     transaction_date = models.DateField(db_index=True)
+    transaction_time = models.TimeField(
+        null=True, blank=True, help_text="Time of day, from a time column or derived from the reference."
+    )
     value_date = models.DateField(null=True, blank=True)
     posting_date = models.DateField(null=True, blank=True)
     debit_amount = models.DecimalField(**MONEY, default=0)

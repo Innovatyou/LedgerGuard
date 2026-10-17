@@ -6,6 +6,7 @@
 <div class="actions">
 {% if workable and perms_lg|has:"recon.run" %}<form method="post" action="{% url 'reconciliation:action' recon.pk %}">{% csrf_token %}<button class="btn primary" name="action" value="run">▶ Run matching</button></form>{% endif %}
 <a class="btn" href="{% url 'reporting:recon-statement' recon.pk %}">Statement report</a>
+<a class="btn" href="{% url 'reporting:recon-sessions' recon.pk %}">Session summary</a>
 {% if recon.status == 'APPROVED' or recon.status == 'CLOSED' %}<a class="btn" href="{% url 'reconciliation:create' %}?from={{ recon.pk }}">Roll forward ›</a>{% endif %}
 </div></div>
 

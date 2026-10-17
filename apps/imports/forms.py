@@ -1,4 +1,5 @@
 import json
+import re
 
 from django import forms
 
@@ -27,8 +28,27 @@ class ImportProfileForm(forms.ModelForm):
             "signed_positive_is",
             "default_currency",
             "default_account_reference",
+            "time_from_reference",
+            "reference_time_pattern",
             "is_active",
         ]
+
+    def clean_reference_time_pattern(self):
+        pattern = self.cleaned_data.get("reference_time_pattern", "").strip()
+        if pattern:
+            try:
+                compiled = re.compile(pattern)
+            except re.error as exc:
+                raise forms.ValidationError(f"Invalid regular expression: {exc}") from exc
+            if not {"HH", "MM"} <= set(compiled.groupindex):
+                raise forms.ValidationError("The pattern needs named groups HH and MM, e.g. (?P<HH>\\d{2}).")
+        return pattern
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("time_from_reference") == "PATTERN" and not cleaned.get("reference_time_pattern"):
+            self.add_error("reference_time_pattern", "Enter a pattern or choose another time source.")
+        return cleaned
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

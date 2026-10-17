@@ -15,8 +15,9 @@ import difflib
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from itertools import combinations
 
 from .models import REFERENCE_FIELDS, Strategy
 
@@ -43,6 +44,8 @@ class Txn:
     net_amount: Decimal | None = None
     is_reversal: bool = False
     suspected_duplicate: bool = False
+    time_of_day: time | None = None
+    row: int = 0
 
     def ref(self, field_name: str) -> str:
         if field_name == "narration_contains":
@@ -443,6 +446,385 @@ def match_similar_narration(rule, left, right):
     return proposals
 
 
+# --------------------------------------------------------------------------
+# Bulk / session settlement
+# --------------------------------------------------------------------------
+#
+# A settlement account statement shows one bulk line per settlement session
+# (e.g. one NIP inward credit of 320,000 for a session), while the core
+# banking GL shows every transfer and charge individually. The two strategies
+# below rebuild those bulk amounts from the individual items.
+
+BOUNDARY_POOL_LIMIT = 12  # boundary items considered when moving items between sessions
+SUBSET_CANDIDATE_LIMIT = 60  # items considered by the free amount search per bulk line
+SUBSET_NODE_BUDGET = 200_000  # search steps per bulk line
+
+
+def _sides(rule, left, right):
+    """(bulk items, detail items, bulk is left)."""
+    if getattr(rule, "bulk_side", "LEFT") == "RIGHT":
+        return right, left, False
+    return left, right, True
+
+
+def _proposal(bulk_is_left, lines, items, unique, reason, flags=None, kind="MATCH"):
+    if bulk_is_left:
+        return Proposal(list(lines), list(items), unique, reason, kind, list(flags or []))
+    return Proposal(list(items), list(lines), unique, reason, kind, list(flags or []))
+
+
+def _cutoffs(rule) -> list[time]:
+    return [time.fromisoformat(c) for c in (rule.session_cutoffs or [])]
+
+
+def session_of(t_date: date, t_time: time, cutoffs: list[time]) -> tuple[date, int]:
+    """
+    Settlement session of a transaction: (session date, 1-based session number).
+
+    Session *n* covers times after cut-off n-1 up to and including cut-off n;
+    items after the last cut-off fall into session 1 of the next day.
+    """
+    for number, cutoff in enumerate(cutoffs, start=1):
+        if t_time <= cutoff:
+            return t_date, number
+    return t_date + timedelta(days=1), 1
+
+
+def _neighbour(t_date: date, t_time: time, cutoffs: list[time], minutes: int):
+    """The adjacent session an item near a cut-off may have settled in, or None."""
+    if not minutes:
+        return None
+    moment = datetime.combine(t_date, t_time)
+    window = timedelta(minutes=minutes)
+    for day in (t_date - timedelta(days=1), t_date, t_date + timedelta(days=1)):
+        for cutoff in cutoffs:
+            edge = datetime.combine(day, cutoff)
+            if abs(moment - edge) > window:
+                continue
+            # The item sits at/just before (just after) this cut-off: the alternative is the other side of it.
+            other = edge + timedelta(seconds=1) if moment <= edge else edge
+            return session_of(other.date(), other.time(), cutoffs)
+    return None
+
+
+def _is_fee(t: Txn, keywords) -> bool:
+    words = set(t.norm_narration.split())
+    return any(k.upper() in words or (" " in k and k.upper() in t.norm_narration) for k in keywords)
+
+
+def _session_label(key) -> str:
+    return f"{key[0].isoformat()} session {key[1]}"
+
+
+def match_session_bulk(rule, left, right):
+    """
+    Group detail items (e.g. GL transfers and charges) by settlement session
+    and direction, and match each group's total to one bulk line on the
+    other side dated within the rule's date tolerance of the session date.
+
+    For each session and direction, in order:
+
+    1. all items (principal and charges settled together);
+    2. principal and charges separately, when fee keywords are configured
+       (charges settled as their own bulk line);
+    3. items near a cut-off moved to or from the neighbouring session
+       (only when ``session_boundary_minutes`` is set; never unique, so a
+       person confirms the move);
+    4. inward and outward items of a session netted against one line
+       (never unique).
+
+    Items without a time of day cannot be placed in a session and are left
+    for other rules (e.g. the bulk amount finder).
+    """
+    cutoffs = _cutoffs(rule)
+    if not cutoffs:
+        return []
+    bulk, detail, bulk_is_left = _sides(rule, left, right)
+    tol_days, tol_amount = rule.date_tolerance_days, rule.amount_tolerance
+    keywords = list(rule.fee_keywords or [])
+
+    groups: dict = defaultdict(list)
+    alternatives: dict[int, tuple] = {}
+    for t in detail:
+        if t.time_of_day is None or t.flow == ZERO:
+            continue
+        key = session_of(t.date, t.time_of_day, cutoffs)
+        sign = 1 if t.flow > 0 else -1
+        groups[(key, sign)].append(t)
+        alt = _neighbour(t.date, t.time_of_day, cutoffs, rule.session_boundary_minutes)
+        if alt is not None and alt != key:
+            alternatives[t.id] = alt
+
+    lines_by_sign: dict = defaultdict(list)
+    for b in bulk:
+        if b.flow != ZERO:
+            lines_by_sign[1 if b.flow > 0 else -1].append(b)
+    used_lines: set[int] = set()
+    used_items: set[int] = set()
+    proposals = []
+
+    def find_lines(total, sign, session_date):
+        return [
+            b
+            for b in lines_by_sign[sign]
+            if b.id not in used_lines
+            and _amount_ok(b.flow, total, tol_amount)
+            and abs((b.date - session_date).days) <= tol_days
+        ]
+
+    def best_line(candidates, total, session_date):
+        return min(candidates, key=lambda b: (abs(b.flow - total), abs((b.date - session_date).days), b.id))
+
+    def emit(lines, items, unique, reason, flags=None):
+        used_lines.update(b.id for b in lines)
+        used_items.update(t.id for t in items)
+        proposals.append(_proposal(bulk_is_left, lines, items, unique, reason, flags))
+
+    ordered = sorted(groups, key=lambda k: (k[0], -k[1]))
+    leftovers = []
+    for key, sign in ordered:
+        members = [t for t in groups[(key, sign)] if t.id not in used_items]
+        if not members or len(members) > rule.max_group_size:
+            continue
+        session_date = key[0]
+        label = f"{'Inward' if sign > 0 else 'Outward'} {_session_label(key)}"
+        total = sum((t.flow for t in members), ZERO)
+
+        # 1. Everything in the session settled as one bulk line.
+        candidates = find_lines(total, sign, session_date)
+        if candidates:
+            emit(
+                [best_line(candidates, total, session_date)],
+                members,
+                len(candidates) == 1,
+                f"{label}: {len(members)} item(s) total {total} equal one bulk line",
+            )
+            continue
+
+        # 2. Charges settled separately from the principal amounts.
+        if keywords:
+            fees = [t for t in members if _is_fee(t, keywords)]
+            principal = [t for t in members if not _is_fee(t, keywords)]
+            if fees and principal:
+                p_total = sum((t.flow for t in principal), ZERO)
+                p_lines = find_lines(p_total, sign, session_date)
+                if p_lines:
+                    emit(
+                        [best_line(p_lines, p_total, session_date)],
+                        principal,
+                        len(p_lines) == 1,
+                        f"{label}: {len(principal)} principal item(s) total {p_total} equal one bulk line",
+                    )
+                    f_total = sum((t.flow for t in fees), ZERO)
+                    f_lines = find_lines(f_total, sign, session_date)
+                    if f_lines:
+                        emit(
+                            [best_line(f_lines, f_total, session_date)],
+                            fees,
+                            len(f_lines) == 1,
+                            f"{label}: {len(fees)} charge item(s) total {f_total} equal one bulk line",
+                        )
+                    continue
+        leftovers.append((key, sign))
+
+    # 3. Items near a cut-off that settled in the neighbouring session.
+    if rule.session_boundary_minutes:
+        for key, sign in leftovers:
+            members = [t for t in groups[(key, sign)] if t.id not in used_items]
+            if not members:
+                continue
+            removable = [t for t in members if t.id in alternatives]
+            addable = [
+                t
+                for (k, s), items in groups.items()
+                if s == sign and k != key
+                for t in items
+                if t.id not in used_items and alternatives.get(t.id) == key
+            ]
+            pool = (removable + addable)[:BOUNDARY_POOL_LIMIT]
+            if not pool:
+                continue
+            base = sum((t.flow for t in members), ZERO)
+            hit = None
+            for size in range(1, len(pool) + 1):
+                for combo in combinations(pool, size):
+                    moved_out = [t for t in combo if t in removable]
+                    moved_in = [t for t in combo if t not in removable]
+                    total = base - sum((t.flow for t in moved_out), ZERO) + sum((t.flow for t in moved_in), ZERO)
+                    candidates = find_lines(total, sign, key[0])
+                    if candidates:
+                        hit = (combo, moved_out, moved_in, total, candidates)
+                        break
+                if hit:
+                    break
+            if not hit:
+                continue
+            _, moved_out, moved_in, total, candidates = hit
+            items = [t for t in members if t not in moved_out] + moved_in
+            if not items or len(items) > rule.max_group_size:
+                continue
+            label = f"{'Inward' if sign > 0 else 'Outward'} {_session_label(key)}"
+            emit(
+                [best_line(candidates, total, key[0])],
+                items,
+                False,
+                f"{label}: total {total} equals one bulk line after moving "
+                f"{len(moved_out) + len(moved_in)} item(s) across a session cut-off",
+            )
+
+    # 4. Inward and outward items of a session settled net.
+    for key in sorted({k for k, _ in groups}):
+        items = [t for s in (1, -1) for t in groups.get((key, s), []) if t.id not in used_items]
+        if not any(t.flow > 0 for t in items) or not any(t.flow < 0 for t in items):
+            continue
+        if len(items) > rule.max_group_size:
+            continue
+        total = sum((t.flow for t in items), ZERO)
+        if total == ZERO:
+            continue
+        candidates = find_lines(total, 1 if total > 0 else -1, key[0])
+        if candidates:
+            emit(
+                [best_line(candidates, total, key[0])],
+                items,
+                False,
+                f"Net of inward and outward items in {_session_label(key)} ({total}) equals one bulk line",
+            )
+    return proposals
+
+
+def _order_key(t: Txn):
+    return (t.date, t.time_of_day or time.min, t.row, t.id)
+
+
+def _contiguous_runs(items: list[Txn], target: Decimal, max_size: int) -> list[tuple[int, int]]:
+    """All runs items[i:j] (2 ≤ length ≤ max_size) whose amounts add up to target (amounts all the same sign)."""
+    runs, total, start = [], ZERO, 0
+    for end, t in enumerate(items):
+        total += abs(t.flow)
+        while total > target and start <= end:
+            total -= abs(items[start].flow)
+            start += 1
+        if total == target and 2 <= end - start + 1 <= max_size:
+            runs.append((start, end + 1))
+    return runs
+
+
+def _subset_search(items: list[Txn], target: Decimal, max_size: int, limit: int = 2):
+    """Up to `limit` subsets (2..max_size items) adding up exactly to target; bounded depth-first search."""
+    values = sorted(items, key=lambda t: (-abs(t.flow), t.id))
+    amounts = [abs(t.flow) for t in values]
+    suffix = [ZERO] * (len(amounts) + 1)
+    for i in range(len(amounts) - 1, -1, -1):
+        suffix[i] = suffix[i + 1] + amounts[i]
+    found: list[list[Txn]] = []
+    steps = 0
+    chosen: list[int] = []
+
+    def walk(i, remaining):
+        nonlocal steps
+        if len(found) >= limit or steps > SUBSET_NODE_BUDGET:
+            return
+        steps += 1
+        if remaining == ZERO:
+            if len(chosen) >= 2:
+                found.append([values[k] for k in chosen])
+            return
+        if i == len(values) or len(chosen) >= max_size or suffix[i] < remaining:
+            return
+        if amounts[i] <= remaining:
+            chosen.append(i)
+            walk(i + 1, remaining - amounts[i])
+            chosen.pop()
+        # Skip equal amounts at this position to avoid enumerating the same total twice.
+        j = i + 1
+        while j < len(values) and amounts[j] == amounts[i]:
+            j += 1
+        walk(j, remaining)
+
+    walk(0, target)
+    return found, steps > SUBSET_NODE_BUDGET
+
+
+def match_bulk_subset(rule, left, right):
+    """
+    Bulk amount finder for detail items that carry no session ID and no time.
+
+    For each bulk line, considers unmatched detail items in the same direction
+    dated from (line date − date tolerance) to the line date, in source order
+    (date, time, file row), and looks for:
+
+    1. a contiguous run of items whose total equals the bulk amount: sessions
+       are consecutive in a chronological GL export, so this is usually the
+       session (high-confidence candidate, a person accepts it);
+    2. otherwise any combination of up to ``max_group_size`` items that adds
+       up exactly, using a bounded search over the nearest
+       ``SUBSET_CANDIDATE_LIMIT`` items (always manual review).
+
+    The amount must agree exactly; this strategy is never auto-accepted.
+    """
+    bulk, detail, bulk_is_left = _sides(rule, left, right)
+    tol_days = rule.date_tolerance_days
+    by_sign: dict = defaultdict(list)
+    for t in detail:
+        if t.flow != ZERO:
+            by_sign[1 if t.flow > 0 else -1].append(t)
+    for items in by_sign.values():
+        items.sort(key=_order_key)
+    used: set[int] = set()
+    proposals = []
+    for line in sorted(bulk, key=lambda b: (b.date, b.id)):
+        if line.flow == ZERO:
+            continue
+        sign = 1 if line.flow > 0 else -1
+        target = abs(line.flow)
+        earliest = line.date - timedelta(days=tol_days)
+        candidates = [t for t in by_sign[sign] if t.id not in used and earliest <= t.date <= line.date]
+        if len(candidates) < 2:
+            continue
+        runs = _contiguous_runs(candidates, target, rule.max_group_size)
+        if runs:
+            start, end = runs[0]
+            items = candidates[start:end]
+            used.update(t.id for t in items)
+            proposals.append(
+                _proposal(
+                    bulk_is_left,
+                    [line],
+                    items,
+                    len(runs) == 1,
+                    f"{len(items)} consecutive item(s) from {items[0].date} total {target}, equal to the bulk line",
+                    flags=[] if len(runs) == 1 else [f"{len(runs)} different runs add up to this amount"],
+                )
+            )
+            continue
+        nearest = sorted(
+            (t for t in candidates if abs(t.flow) <= target),
+            key=lambda t: ((line.date - t.date).days, t.id),
+        )[:SUBSET_CANDIDATE_LIMIT]
+        found, exhausted = _subset_search(nearest, target, rule.max_group_size)
+        if not found:
+            continue
+        items = sorted(found[0], key=_order_key)
+        used.update(t.id for t in items)
+        flags = ["Items found by amount search: confirm they belong to this bulk line"]
+        if len(found) > 1:
+            flags.append("Another combination of items also adds up to this amount")
+        if exhausted:
+            flags.append("Search limit reached; other combinations were not examined")
+        proposals.append(
+            _proposal(
+                bulk_is_left,
+                [line],
+                items,
+                False,
+                f"{len(items)} item(s) adding up to bulk line {target}",
+                flags=flags,
+            )
+        )
+    return proposals
+
+
 STRATEGIES = {
     Strategy.EXACT_REFERENCE: match_reference,
     Strategy.EXTERNAL_ID: match_reference,
@@ -454,6 +836,8 @@ STRATEGIES = {
     Strategy.FEE_NET: match_fee_net,
     Strategy.REVERSAL_PAIR: match_reversal_pairs,
     Strategy.NARRATION_SIMILARITY: match_similar_narration,
+    Strategy.SESSION_BULK: match_session_bulk,
+    Strategy.BULK_SUBSET: match_bulk_subset,
 }
 
 
