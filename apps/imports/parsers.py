@@ -103,6 +103,8 @@ def read_table(data: bytes, extension: str, header_row: int = 1, sheet_name: str
                 ws = wb[sheet_name]
             else:
                 ws = wb.worksheets[0]
+            # Some bank exports declare a wrong sheet size (e.g. "A1"); read every row that is actually present.
+            ws.reset_dimensions()
             raw_rows = [[_cell_text(v) for v in row] for row in ws.iter_rows(values_only=True)]
         finally:
             wb.close()

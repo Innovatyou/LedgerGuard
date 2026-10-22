@@ -106,6 +106,23 @@ class MatchingRule(InstitutionScopedModel):
         default=0,
         help_text="Session bulk: items this close to a cut-off may have settled in the neighbouring session.",
     )
+    session_label_format = models.CharField(
+        max_length=8,
+        choices=[
+            ("NONE", "Not used"),
+            ("NIBSS", 'NIBSS narration ("31.08.2026 11th SESSION")'),
+            ("PATTERN", "Custom pattern"),
+        ],
+        default="NONE",
+        help_text="Session bulk: read the session date and number from the bulk line's narration, so each "
+        "line settles exactly the session it names.",
+    )
+    session_label_pattern = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Custom session label: a regular expression on the normalised narration (upper case, "
+        "punctuation as spaces) with named groups DD, MO, YYYY (or YY) and N.",
+    )
     fee_keywords = models.JSONField(
         default=list,
         blank=True,
@@ -127,13 +144,21 @@ class MatchingRule(InstitutionScopedModel):
         errors = {}
         cutoffs = self.session_cutoffs or []
         if not isinstance(cutoffs, list) or not all(
-            isinstance(c, str) and re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", c) for c in cutoffs
+            isinstance(c, str) and re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d|24:00", c) for c in cutoffs
         ):
-            errors["session_cutoffs"] = 'Enter cut-off times as a list of "HH:MM" values.'
+            errors["session_cutoffs"] = 'Enter cut-off times as a list of "HH:MM" values (24:00 = end of day).'
         elif cutoffs != sorted(set(cutoffs)):
             errors["session_cutoffs"] = "Cut-off times must be in increasing order without repeats."
         elif self.strategy == Strategy.SESSION_BULK and not cutoffs:
             errors["session_cutoffs"] = "Session bulk matching needs the settlement session cut-off times."
+        if self.session_label_format == "PATTERN":
+            try:
+                groups = set(re.compile(self.session_label_pattern or "").groupindex)
+            except re.error as exc:
+                errors["session_label_pattern"] = f"Invalid regular expression: {exc}"
+            else:
+                if not ({"DD", "MO", "N"} <= groups and groups & {"YYYY", "YY"}):
+                    errors["session_label_pattern"] = "The pattern needs named groups DD, MO, YYYY (or YY) and N."
         keywords = self.fee_keywords or []
         if not isinstance(keywords, list) or not all(isinstance(k, str) and k.strip() for k in keywords):
             errors["fee_keywords"] = "Enter fee keywords as a list of words."
@@ -157,6 +182,8 @@ class MatchingRule(InstitutionScopedModel):
             "bulk_side": self.bulk_side,
             "session_cutoffs": self.session_cutoffs,
             "session_boundary_minutes": self.session_boundary_minutes,
+            "session_label_format": self.session_label_format,
+            "session_label_pattern": self.session_label_pattern,
             "fee_keywords": self.fee_keywords,
         }
 

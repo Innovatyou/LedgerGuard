@@ -30,6 +30,7 @@ class ImportProfileForm(forms.ModelForm):
             "default_account_reference",
             "time_from_reference",
             "reference_time_pattern",
+            "narration_reference_pattern",
             "is_active",
         ]
 
@@ -42,6 +43,15 @@ class ImportProfileForm(forms.ModelForm):
                 raise forms.ValidationError(f"Invalid regular expression: {exc}") from exc
             if not {"HH", "MM"} <= set(compiled.groupindex):
                 raise forms.ValidationError("The pattern needs named groups HH and MM, e.g. (?P<HH>\\d{2}).")
+        return pattern
+
+    def clean_narration_reference_pattern(self):
+        pattern = self.cleaned_data.get("narration_reference_pattern", "").strip()
+        if pattern:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise forms.ValidationError(f"Invalid regular expression: {exc}") from exc
         return pattern
 
     def clean(self):

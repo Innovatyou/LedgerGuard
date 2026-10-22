@@ -5,13 +5,13 @@ from apps.accounting.models import Account
 from .models import COMPOSITE_FIELDS, REFERENCE_FIELDS, MatchingRule, Reconciliation
 
 REF_CHOICES = [(k, k.replace("_", " ").capitalize()) for k in REFERENCE_FIELDS] + [
-    ("narration_contains", "Narration contains the other side's reference")
+    ("narration_contains", 'Narration (reference found in narration; reversals: "Reversal of …")')
 ]
 
 
 class MatchingRuleForm(forms.ModelForm):
     left_reference_field = forms.ChoiceField(choices=REF_CHOICES)
-    right_reference_field = forms.ChoiceField(choices=REF_CHOICES[:-1])
+    right_reference_field = forms.ChoiceField(choices=REF_CHOICES)
     composite_fields = forms.MultipleChoiceField(
         choices=[(f, f) for f in sorted(COMPOSITE_FIELDS)], required=False, widget=forms.CheckboxSelectMultiple
     )
@@ -19,7 +19,8 @@ class MatchingRuleForm(forms.ModelForm):
     session_cutoffs_text = forms.CharField(
         required=False,
         label="Session cut-off times",
-        help_text="Session bulk: comma-separated HH:MM times in increasing order, e.g. 03:00, 06:00, 09:00.",
+        help_text="Session bulk: comma-separated HH:MM times in increasing order, e.g. 06:00, 09:00, …, 21:00, 24:00 "
+        "(24:00 = end of day).",
     )
     fee_keywords_text = forms.CharField(
         required=False,
@@ -45,6 +46,8 @@ class MatchingRuleForm(forms.ModelForm):
             "similarity_threshold",
             "bulk_side",
             "session_boundary_minutes",
+            "session_label_format",
+            "session_label_pattern",
             "description",
         ]
 
@@ -54,6 +57,7 @@ class MatchingRuleForm(forms.ModelForm):
         self.fields["fee_keywords_text"].initial = ", ".join(self.instance.fee_keywords or [])
         self.fields["bulk_side"].required = False
         self.fields["session_boundary_minutes"].required = False
+        self.fields["session_label_format"].required = False
 
     @staticmethod
     def _split(text):
@@ -62,6 +66,7 @@ class MatchingRuleForm(forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         cleaned["bulk_side"] = cleaned.get("bulk_side") or "LEFT"
+        cleaned["session_label_format"] = cleaned.get("session_label_format") or "NONE"
         if cleaned.get("session_boundary_minutes") is None:
             cleaned["session_boundary_minutes"] = 0
         cutoffs = self._split(cleaned.pop("session_cutoffs_text", ""))

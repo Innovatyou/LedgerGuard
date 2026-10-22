@@ -12,6 +12,7 @@ the bank asset account are both positive and compare directly.
 """
 
 import difflib
+import re
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -385,12 +386,59 @@ def match_fee_net(rule, left, right):
     return proposals
 
 
+_REVERSAL_PREFIX = re.compile(r"^(?:REVERSAL OF|REVERSAL|RVSL|REV)\s+")
+
+
+def _narration_reversals(rule, items, is_left):
+    """
+    Pair an entry with its reversal on the same side when the reversal's
+    narration is "Reversal of (<original narration>)", possibly truncated.
+    """
+    reversals, originals = [], []
+    for t in items:
+        m = _REVERSAL_PREFIX.match(t.norm_narration)
+        if m and len(t.norm_narration) - m.end() >= 12:
+            reversals.append((t, t.norm_narration[m.end() :]))
+        elif t.norm_narration:
+            originals.append(t)
+    used, proposals = set(), []
+    for rev, core in sorted(reversals, key=lambda r: (r[0].date, r[0].row, r[0].id)):
+        options = [
+            o
+            for o in originals
+            if o.id not in used
+            and (o.flow > 0) != (rev.flow > 0)
+            and abs(o.flow) == abs(rev.flow)
+            and o.date <= rev.date
+            and _within_days(o, rev, rule.date_tolerance_days)
+            and (o.norm_narration.startswith(core) or core.startswith(o.norm_narration))
+        ]
+        if not options:
+            continue
+        original = max(options, key=lambda o: (o.date, o.row, o.id))  # nearest preceding entry
+        used.add(original.id)
+        pair = [original, rev]
+        proposals.append(
+            Proposal(
+                pair if is_left else [],
+                [] if is_left else pair,
+                len(options) == 1,
+                "Entry and its reversal (narration)",
+                kind="REVERSAL",
+            )
+        )
+    return proposals
+
+
 def match_reversal_pairs(rule, left, right):
     proposals = []
     for side_items, field_name, is_left in (
         (left, rule.left_reference_field, True),
         (right, rule.right_reference_field, False),
     ):
+        if field_name == "narration_contains":
+            proposals += _narration_reversals(rule, side_items, is_left)
+            continue
         groups: dict = defaultdict(list)
         for t in side_items:
             key = t.ref(field_name)
@@ -474,7 +522,8 @@ def _proposal(bulk_is_left, lines, items, unique, reason, flags=None, kind="MATC
 
 
 def _cutoffs(rule) -> list[time]:
-    return [time.fromisoformat(c) for c in (rule.session_cutoffs or [])]
+    """Cut-off times; "24:00" means the end of the day."""
+    return [time.max if c == "24:00" else time.fromisoformat(c) for c in (rule.session_cutoffs or [])]
 
 
 def session_of(t_date: date, t_time: time, cutoffs: list[time]) -> tuple[date, int]:
@@ -482,7 +531,8 @@ def session_of(t_date: date, t_time: time, cutoffs: list[time]) -> tuple[date, i
     Settlement session of a transaction: (session date, 1-based session number).
 
     Session *n* covers times after cut-off n-1 up to and including cut-off n;
-    items after the last cut-off fall into session 1 of the next day.
+    items after the last cut-off fall into session 1 of the next day (a last
+    cut-off of 24:00 keeps every item in its own day).
     """
     for number, cutoff in enumerate(cutoffs, start=1):
         if t_time <= cutoff:
@@ -502,7 +552,7 @@ def _neighbour(t_date: date, t_time: time, cutoffs: list[time], minutes: int):
             if abs(moment - edge) > window:
                 continue
             # The item sits at/just before (just after) this cut-off: the alternative is the other side of it.
-            other = edge + timedelta(seconds=1) if moment <= edge else edge
+            other = edge + timedelta(microseconds=1) if moment <= edge else edge
             return session_of(other.date(), other.time(), cutoffs)
     return None
 
@@ -516,13 +566,54 @@ def _session_label(key) -> str:
     return f"{key[0].isoformat()} session {key[1]}"
 
 
+# Session label in a bulk line's narration, e.g. "31.08.2026 11th SESSION NIP SETT".
+# Applied to the normalised narration (upper case, punctuation replaced by spaces).
+NIBSS_SESSION_LABEL = re.compile(
+    r"(?<!\d)(?P<DD>\d{1,2}) (?P<MO>\d{1,2}) (?P<YYYY>\d{4}) (?P<N>\d{1,2}) ?(?:ST|ND|RD|TH) SESSION"
+)
+
+
+def _label_regex(rule):
+    mode = getattr(rule, "session_label_format", "NONE")
+    if mode == "NIBSS":
+        return NIBSS_SESSION_LABEL
+    if mode == "PATTERN" and rule.session_label_pattern:
+        try:
+            return re.compile(rule.session_label_pattern)
+        except re.error:
+            return None
+    return None
+
+
+def session_label_of(regex, t: Txn):
+    """(session date, session number) named in a bulk line's narration, or None."""
+    if regex is None:
+        return None
+    m = regex.search(t.norm_narration)
+    if not m:
+        return None
+    parts = m.groupdict()
+    try:
+        year = int(parts.get("YYYY") or 2000 + int(parts["YY"]))
+        return date(year, int(parts["MO"]), int(parts["DD"])), int(parts["N"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def match_session_bulk(rule, left, right):
     """
     Group detail items (e.g. GL transfers and charges) by settlement session
-    and direction, and match each group's total to one bulk line on the
-    other side dated within the rule's date tolerance of the session date.
+    and direction, and match each group's total to one bulk line on the other
+    side.
 
-    For each session and direction, in order:
+    A bulk line belongs to a session when its narration names the session
+    (``session_label_format``, e.g. "31.08.2026 11th SESSION"); otherwise it
+    may settle any session dated within the rule's date tolerance.
+
+    0. Bulk lines naming the same session with equal and opposite amounts (a
+       bank posting and its reversal) are paired with each other first.
+
+    Then, for each session and direction, in order:
 
     1. all items (principal and charges settled together);
     2. principal and charges separately, when fee keywords are configured
@@ -542,6 +633,39 @@ def match_session_bulk(rule, left, right):
     bulk, detail, bulk_is_left = _sides(rule, left, right)
     tol_days, tol_amount = rule.date_tolerance_days, rule.amount_tolerance
     keywords = list(rule.fee_keywords or [])
+    regex = _label_regex(rule)
+    labels = {b.id: session_label_of(regex, b) for b in bulk}
+
+    used_lines: set[int] = set()
+    used_items: set[int] = set()
+    proposals = []
+
+    # 0. Bank postings reversed under the same session label.
+    buckets: dict = defaultdict(list)
+    for b in bulk:
+        if labels[b.id] and b.flow != ZERO:
+            buckets[(labels[b.id], abs(b.flow))].append(b)
+    for (key, amount), lines in buckets.items():
+        if len({b.flow > 0 for b in lines}) < 2:
+            continue
+        seen: list[Txn] = []
+        for b in sorted(lines, key=lambda t: (t.date, t.row, t.id)):
+            earlier = [o for o in seen if (o.flow > 0) != (b.flow > 0) and o.id not in used_lines]
+            if earlier:
+                original = earlier[-1]  # the nearest preceding opposite entry is the one reversed
+                used_lines.update((original.id, b.id))
+                proposals.append(
+                    _proposal(
+                        bulk_is_left,
+                        [original, b],
+                        [],
+                        len(earlier) == 1,
+                        f"Bank posting of {amount} for {_session_label(key)} and its reversal",
+                        kind="REVERSAL",
+                    )
+                )
+            else:
+                seen.append(b)
 
     groups: dict = defaultdict(list)
     alternatives: dict[int, tuple] = {}
@@ -557,28 +681,35 @@ def match_session_bulk(rule, left, right):
 
     lines_by_sign: dict = defaultdict(list)
     for b in bulk:
-        if b.flow != ZERO:
+        if b.flow != ZERO and b.id not in used_lines:
             lines_by_sign[1 if b.flow > 0 else -1].append(b)
-    used_lines: set[int] = set()
-    used_items: set[int] = set()
-    proposals = []
 
-    def find_lines(total, sign, session_date):
-        return [
-            b
-            for b in lines_by_sign[sign]
-            if b.id not in used_lines
-            and _amount_ok(b.flow, total, tol_amount)
-            and abs((b.date - session_date).days) <= tol_days
-        ]
+    def find_lines(total, sign, key):
+        out = []
+        for b in lines_by_sign[sign]:
+            if b.id in used_lines or not _amount_ok(b.flow, total, tol_amount):
+                continue
+            label = labels[b.id]
+            if label is not None:
+                if label == key:
+                    out.append(b)
+            elif abs((b.date - key[0]).days) <= tol_days:
+                out.append(b)
+        return out
 
-    def best_line(candidates, total, session_date):
-        return min(candidates, key=lambda b: (abs(b.flow - total), abs((b.date - session_date).days), b.id))
+    def best_line(candidates, total, key):
+        return min(
+            candidates,
+            key=lambda b: (labels[b.id] != key, abs(b.flow - total), abs((b.date - key[0]).days), b.row, b.id),
+        )
 
     def emit(lines, items, unique, reason, flags=None):
         used_lines.update(b.id for b in lines)
         used_items.update(t.id for t in items)
         proposals.append(_proposal(bulk_is_left, lines, items, unique, reason, flags))
+
+    def describe(key, sign):
+        return f"{'Inward' if sign > 0 else 'Outward'} {_session_label(key)}"
 
     ordered = sorted(groups, key=lambda k: (k[0], -k[1]))
     leftovers = []
@@ -586,18 +717,16 @@ def match_session_bulk(rule, left, right):
         members = [t for t in groups[(key, sign)] if t.id not in used_items]
         if not members or len(members) > rule.max_group_size:
             continue
-        session_date = key[0]
-        label = f"{'Inward' if sign > 0 else 'Outward'} {_session_label(key)}"
         total = sum((t.flow for t in members), ZERO)
 
         # 1. Everything in the session settled as one bulk line.
-        candidates = find_lines(total, sign, session_date)
+        candidates = find_lines(total, sign, key)
         if candidates:
             emit(
-                [best_line(candidates, total, session_date)],
+                [best_line(candidates, total, key)],
                 members,
                 len(candidates) == 1,
-                f"{label}: {len(members)} item(s) total {total} equal one bulk line",
+                f"{describe(key, sign)}: {len(members)} item(s) total {total} equal one bulk line",
             )
             continue
 
@@ -607,33 +736,39 @@ def match_session_bulk(rule, left, right):
             principal = [t for t in members if not _is_fee(t, keywords)]
             if fees and principal:
                 p_total = sum((t.flow for t in principal), ZERO)
-                p_lines = find_lines(p_total, sign, session_date)
+                p_lines = find_lines(p_total, sign, key)
                 if p_lines:
                     emit(
-                        [best_line(p_lines, p_total, session_date)],
+                        [best_line(p_lines, p_total, key)],
                         principal,
                         len(p_lines) == 1,
-                        f"{label}: {len(principal)} principal item(s) total {p_total} equal one bulk line",
+                        f"{describe(key, sign)}: {len(principal)} principal item(s) total {p_total} "
+                        "equal one bulk line",
                     )
                     f_total = sum((t.flow for t in fees), ZERO)
-                    f_lines = find_lines(f_total, sign, session_date)
+                    f_lines = find_lines(f_total, sign, key)
                     if f_lines:
                         emit(
-                            [best_line(f_lines, f_total, session_date)],
+                            [best_line(f_lines, f_total, key)],
                             fees,
                             len(f_lines) == 1,
-                            f"{label}: {len(fees)} charge item(s) total {f_total} equal one bulk line",
+                            f"{describe(key, sign)}: {len(fees)} charge item(s) total {f_total} equal one bulk line",
                         )
                     continue
         leftovers.append((key, sign))
 
-    # 3. Items near a cut-off that settled in the neighbouring session.
+    # 3. Items near a cut-off that settled in the neighbouring session. Sessions
+    #    named by an unmatched bulk line are tried too, even if no item fell in them.
     if rule.session_boundary_minutes:
-        for key, sign in leftovers:
-            members = [t for t in groups[(key, sign)] if t.id not in used_items]
-            if not members:
+        targets = set(leftovers)
+        for sign, lines in lines_by_sign.items():
+            targets.update((labels[b.id], sign) for b in lines if labels[b.id] and b.id not in used_lines)
+        for key, sign in sorted(targets, key=lambda k: (k[0], -k[1])):
+            members = [t for t in groups.get((key, sign), []) if t.id not in used_items]
+            if len(members) > rule.max_group_size:
                 continue
             removable = [t for t in members if t.id in alternatives]
+            removable_ids = {t.id for t in removable}
             addable = [
                 t
                 for (k, s), items in groups.items()
@@ -642,34 +777,41 @@ def match_session_bulk(rule, left, right):
                 if t.id not in used_items and alternatives.get(t.id) == key
             ]
             pool = (removable + addable)[:BOUNDARY_POOL_LIMIT]
-            if not pool:
+            if not pool and not members:
                 continue
             base = sum((t.flow for t in members), ZERO)
             hit = None
-            for size in range(1, len(pool) + 1):
+            # Size 0 re-tries the session as it stands after earlier moves took items away from it.
+            for size in range(0, len(pool) + 1):
                 for combo in combinations(pool, size):
-                    moved_out = [t for t in combo if t in removable]
-                    moved_in = [t for t in combo if t not in removable]
+                    moved_out = [t for t in combo if t.id in removable_ids]
+                    moved_in = [t for t in combo if t.id not in removable_ids]
                     total = base - sum((t.flow for t in moved_out), ZERO) + sum((t.flow for t in moved_in), ZERO)
-                    candidates = find_lines(total, sign, key[0])
+                    if total == ZERO:
+                        continue
+                    candidates = find_lines(total, sign, key)
                     if candidates:
-                        hit = (combo, moved_out, moved_in, total, candidates)
+                        hit = (moved_out, moved_in, total, candidates)
                         break
                 if hit:
                     break
             if not hit:
                 continue
-            _, moved_out, moved_in, total, candidates = hit
-            items = [t for t in members if t not in moved_out] + moved_in
+            moved_out, moved_in, total, candidates = hit
+            out_ids = {t.id for t in moved_out}
+            items = [t for t in members if t.id not in out_ids] + moved_in
             if not items or len(items) > rule.max_group_size:
                 continue
-            label = f"{'Inward' if sign > 0 else 'Outward'} {_session_label(key)}"
+            moved = len(moved_out) + len(moved_in)
             emit(
-                [best_line(candidates, total, key[0])],
+                [best_line(candidates, total, key)],
                 items,
                 False,
-                f"{label}: total {total} equals one bulk line after moving "
-                f"{len(moved_out) + len(moved_in)} item(s) across a session cut-off",
+                f"{describe(key, sign)}: total {total} equals one bulk line after moving "
+                f"{moved} item(s) across a session cut-off"
+                if moved
+                else f"{describe(key, sign)}: remaining {len(items)} item(s) total {total} equal one bulk line "
+                "after neighbouring items moved to another session",
             )
 
     # 4. Inward and outward items of a session settled net.
@@ -682,10 +824,10 @@ def match_session_bulk(rule, left, right):
         total = sum((t.flow for t in items), ZERO)
         if total == ZERO:
             continue
-        candidates = find_lines(total, 1 if total > 0 else -1, key[0])
+        candidates = find_lines(total, 1 if total > 0 else -1, key)
         if candidates:
             emit(
-                [best_line(candidates, total, key[0])],
+                [best_line(candidates, total, key)],
                 items,
                 False,
                 f"Net of inward and outward items in {_session_label(key)} ({total}) equals one bulk line",

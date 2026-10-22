@@ -101,6 +101,12 @@ class ImportProfile(InstitutionScopedModel):
         blank=True,
         help_text="Custom pattern: a regular expression with named groups HH, MM and optionally SS, YY, MO, DD.",
     )
+    narration_reference_pattern = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="When the external reference is empty, take it from the narration with this regular expression "
+        "(named group REF, else the first group), e.g. PRF,T,\\d{4}(\\d{12}).",
+    )
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="+")
 

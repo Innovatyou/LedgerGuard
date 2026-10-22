@@ -132,6 +132,19 @@ def parse_date(value, formats=None) -> date | None:
     raise RowError(f"Unrecognised date {text!r}")
 
 
+def reference_from_narration(narration: str, pattern: str) -> str:
+    """Reference captured from a narration by `pattern` (group REF, else group 1, else the whole match)."""
+    try:
+        m = re.search(pattern, narration or "")
+    except re.error:
+        return ""
+    if not m:
+        return ""
+    if "REF" in m.re.groupindex:
+        return (m.group("REF") or "").strip()
+    return (m.group(1) if m.re.groups else m.group(0)).strip()
+
+
 def normalize_reference(value) -> str:
     """Upper-case and remove whitespace only; punctuation and leading zeros are meaningful."""
     return _WS.sub("", str(value or "")).upper()
@@ -253,6 +266,13 @@ def normalize_row(raw: dict, profile, places: int = 2):
     out["norm_transaction_id"] = normalize_reference(out["transaction_id"])
     out["norm_external_reference"] = normalize_reference(out["external_reference"])
     out["narration"] = _text(raw, mapping, "narration")
+    pattern = getattr(profile, "narration_reference_pattern", "")
+    if pattern and not out["external_reference"]:
+        found = reference_from_narration(out["narration"], pattern)
+        if found:
+            out["external_reference"] = found
+            out["norm_external_reference"] = normalize_reference(found)
+            source_values["external_reference"] = "taken from narration"
     out["norm_narration"] = normalize_narration(out["narration"])
     out["counterparty_reference"] = _text(raw, mapping, "counterparty_reference")
     out["settlement_batch_ref"] = normalize_reference(_text(raw, mapping, "settlement_batch_ref"))

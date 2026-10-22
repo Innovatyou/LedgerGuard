@@ -369,3 +369,157 @@ def test_session_bulk_end_to_end(institution, users, client):
     assert resp.status_code == 200 and b"Settlement Sessions" in resp.content
     resp = client.get(url + "?export=xlsx")
     assert resp.status_code == 200 and resp["Content-Type"].startswith("application/vnd.openxmlformats")
+
+
+# ------------------------------------------------------------------ session labels and bank reversals
+
+
+NIBSS_CUTOFFS = [
+    "06:00",
+    "09:00",
+    "10:00",
+    "11:00",
+    "12:00",
+    "13:00",
+    "14:00",
+    "15:00",
+    "17:00",
+    "19:00",
+    "21:00",
+    "24:00",
+]
+
+
+def L(id, flow, day, narration, row=0):
+    from apps.imports.normalize import normalize_narration
+
+    return engine.Txn(
+        id=id, side="LEFT", flow=D(str(flow)), date=d(day), row=row or id, norm_narration=normalize_narration(narration)
+    )
+
+
+def test_end_of_day_cut_off_and_nibss_numbering():
+    cut = engine._cutoffs(rule(session_cutoffs=NIBSS_CUTOFFS))
+    day = d("2026-09-01")
+    assert engine.session_of(day, time(23, 59, 59), cut) == (day, 12)
+    assert engine.session_of(day, time(10, 14, 30), cut) == (day, 4)
+    assert engine.session_of(day, time(0, 38), cut) == (day, 1)
+    rule(session_cutoffs=NIBSS_CUTOFFS).clean()
+    with pytest.raises(ValidationError):
+        rule(session_cutoffs=["24:00", "06:00"]).clean()
+
+
+def test_session_label_ties_line_to_its_session_even_when_posted_next_day():
+    r = rule(session_cutoffs=NIBSS_CUTOFFS, session_label_format="NIBSS", date_tolerance_days=0)
+    gl = [
+        T(1, "RIGHT", "117000", day="2026-08-31", at="19:30"),  # session 11 of 31 Aug
+        T(2, "RIGHT", "5900", day="2026-08-31", at="22:10"),  # session 12 of 31 Aug
+    ]
+    bank = [
+        L(10, "5900", "2026-09-01", "SETTLEMENT TRANSACTIONS   31.08.2026 12th  SESSION NIP SETT PRODIGY MFB"),
+        L(11, "117000", "2026-09-01", "SETTLEMENT TRANSACTIONS   31.08.2026 11TH  SESSION NIP SETT PRODIGY MFB"),
+    ]
+    proposals = engine.match_session_bulk(r, bank, gl)
+    pairs = {p.left[0].id: [t.id for t in p.right] for p in proposals}
+    assert pairs == {10: [2], 11: [1]} and all(p.unique for p in proposals)
+    # A line naming another session is never used for this one, whatever its amount.
+    wrong = [L(12, "117000", "2026-09-01", "SETTLEMENT TRANSACTIONS 31.08.2026 10th SESSION NIP SETT")]
+    assert engine.match_session_bulk(r, wrong, gl[:1]) == []
+
+
+def test_bank_posting_and_reversal_under_same_session_label_are_paired():
+    r = rule(session_cutoffs=NIBSS_CUTOFFS, session_label_format="NIBSS")
+    bank = [
+        L(10, "117000", "2026-09-01", "CCI FEES - INWARD BC 31.08.2026 11th SESSION NIP SETT", row=1),
+        L(11, "-117000", "2026-09-01", "REVERSAL OF ENTRY 31.08.2026 11th SESSION NIP SETT", row=2),
+        L(12, "117000", "2026-09-01", "SETTLEMENT TRANSACTIONS 31.08.2026 11th SESSION NIP SETT", row=3),
+    ]
+    gl = [T(1, "RIGHT", "117000", day="2026-08-31", at="19:30")]
+    proposals = engine.match_session_bulk(r, bank, gl)
+    reversal = next(p for p in proposals if p.kind == "REVERSAL")
+    assert sorted(t.id for t in reversal.left) == [10, 11] and reversal.difference == 0 and reversal.unique
+    settlement = next(p for p in proposals if p.kind == "MATCH")
+    assert [t.id for t in settlement.left] == [12] and [t.id for t in settlement.right] == [1]
+
+
+def test_custom_session_label_pattern_validation():
+    with pytest.raises(ValidationError):
+        rule(session_label_format="PATTERN", session_label_pattern="(?P<DD>\\d+)").clean()
+    rule(
+        session_label_format="PATTERN",
+        session_label_pattern=r"S(?P<N>\d+) (?P<DD>\d{2})(?P<MO>\d{2})(?P<YY>\d{2})",
+    ).clean()
+
+
+def test_session_retried_after_neighbouring_item_moves_away():
+    r = rule(session_cutoffs=NIBSS_CUTOFFS, session_boundary_minutes=15)
+    gl = [
+        T(1, "RIGHT", "48500", day="2026-09-11", at="18:39:03"),  # session 10
+        T(2, "RIGHT", "432000", day="2026-09-11", at="19:00:07"),  # just after the 19:00 cut-off: settled in 10
+        T(3, "RIGHT", "500", day="2026-09-11", at="19:55:35"),  # session 11
+    ]
+    bank = [T(10, "LEFT", "480500", day="2026-09-11"), T(11, "LEFT", "500", day="2026-09-11")]
+    proposals = engine.match_session_bulk(r, bank, gl)
+    assert {p.left[0].id: sorted(t.id for t in p.right) for p in proposals} == {10: [1, 2], 11: [3]}
+
+
+def test_gl_reversal_paired_by_truncated_narration():
+    from apps.imports.normalize import normalize_narration
+
+    def G(id, flow, narration, day="2026-09-02"):
+        return engine.Txn(id=id, side="RIGHT", flow=D(flow), date=d(day), norm_narration=normalize_narration(narration))
+
+    original = G(1, "-50005.38", "Mob trans to ADA OBI @ GTB (0106590190)", day="2026-09-01")
+    reversal = G(2, "50005.38", "Reversal of (Mob trans to ADA OBI @ GTB (01)")
+    other = G(3, "-50005.38", "Mob trans to BOLA ADE @ UBA (2161810021)", day="2026-09-01")
+    r = MatchingRule(
+        strategy=Strategy.REVERSAL_PAIR,
+        left_reference_field="transaction_id",
+        right_reference_field="narration_contains",
+        date_tolerance_days=7,
+    )
+    proposals = engine.match_reversal_pairs(r, [], [original, reversal, other])
+    assert len(proposals) == 1 and sorted(t.id for t in proposals[0].right) == [1, 2] and proposals[0].unique
+
+
+# ------------------------------------------------------------------ import details seen in real bank files
+
+
+def test_reference_taken_from_narration():
+    from apps.imports.normalize import reference_from_narration
+
+    narr = "CHANNEL PAYMENT 9999021033 9999 POS@<3QTL002> <QuickTeller0002> <PRF,T,2273158762000037,Ola Gideon>"
+    assert reference_from_narration(narr, r"PRF,T,\d{4}(\d{12})") == "158762000037"
+    assert reference_from_narration(narr, r"PRF,T,\d{4}(?P<REF>\d{6})") == "158762"
+    assert reference_from_narration("no ref", r"PRF,T,\d{4}(\d{12})") == ""
+    profile = ImportProfile(
+        column_mapping={"transaction_date": "Date", "debit_amount": "Debit", "narration": "Narration"},
+        amount_mode="SEPARATE",
+        date_formats=["%d/%m/%Y"],
+        default_account_reference="1305716706",
+        default_currency="NGN",
+        narration_reference_pattern=r"PRF,T,\d{4}(\d{12})",
+    )
+    out, errors = normalize_row({"Date": "01/09/2026", "Debit": "60,000.00", "Narration": narr}, profile)
+    assert not errors and out["norm_external_reference"] == "158762000037"
+
+
+def test_xlsx_with_wrong_declared_dimension_is_read_in_full():
+    import io
+    import re
+    import zipfile
+
+    from apps.imports.parsers import read_table
+
+    from .helpers import xlsx_bytes
+
+    data = xlsx_bytes([["01/09/2026", "100.00"], ["02/09/2026", "200.00"]], ["Date", "Amount"])
+    src, out = zipfile.ZipFile(io.BytesIO(data)), io.BytesIO()
+    with zipfile.ZipFile(out, "w") as dst:
+        for item in src.infolist():
+            content = src.read(item.filename)
+            if item.filename == "xl/worksheets/sheet1.xml":
+                content = re.sub(rb'<dimension ref="[^"]+"', b'<dimension ref="A1"', content)
+            dst.writestr(item, content)
+    headers, rows = read_table(out.getvalue(), ".xlsx")
+    assert headers == ["Date", "Amount"] and len(rows) == 2
