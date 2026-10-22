@@ -29,7 +29,7 @@ described. Items in the second table cannot be completed in code; they need the 
 | Accounting sign-off: chart of accounts, provisioning bands, regulatory line mappings | Must reflect the institution's IFRS policies and current CBN/NDIC formats | CFO / Financial Controller |
 | Independent penetration test and code review | Required by bank IT risk policies; must be independent | CISO |
 | Infrastructure: managed PostgreSQL with PITR, Redis, TLS certificates, off-site backups, monitoring/SIEM | Environment-specific | IT Infrastructure |
-| Restore drill and RTO/RPO confirmation | Needs the production-like environment | IT Infrastructure |
+| Restore drill and RTO/RPO confirmation with production data volumes | The procedure is verified on the container stack (see `OPERATIONS.md`); timing must be measured on production-sized data and infrastructure | IT Infrastructure |
 | Concurrency/load test at expected month-end user numbers | Needs the target environment | IT |
 | Data-protection assessment (Nigeria Data Protection Act 2023) and hosting approval | Legal/compliance determination | DPO / Compliance |
 | SSO with the institution's identity provider (optional) | Needs IdP configuration; local accounts + TOTP work without it | IT Security |

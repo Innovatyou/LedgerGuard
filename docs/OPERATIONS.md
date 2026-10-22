@@ -4,7 +4,7 @@
 
 ```
 users ──HTTPS──► nginx (TLS, HSTS) ──► gunicorn (web)  ─┐
-core banking ─SFTP/HTTPS─► drop folder / inbound API ───┤──► PostgreSQL 16 (owner + app roles)
+core banking ─SFTP/HTTPS─► drop folder / inbound API ───┤──► PostgreSQL 17 (owner + app roles)
                                        celery worker ───┤──► Redis (broker + cache)
                                        celery beat  ────┘──► media, backups, ingest volumes
 ```
@@ -13,7 +13,7 @@ Run at least two web containers behind the proxy for availability; one beat proc
 
 ## First deployment
 
-1. Provision PostgreSQL 16 and run `deploy/postgres/create_roles.sql` as a superuser (separate owner and app passwords).
+1. Provision PostgreSQL 17 and run `deploy/postgres/create_roles.sql` as a superuser (separate owner and app passwords).
 2. Provision Redis 7 (persistence on) and three volumes: media, backups (preferably a separate disk or replicated
    storage), ingest.
 3. Fill `.env` from `.env.example` using your secrets vault. `DJANGO_DEBUG=False`.
@@ -55,13 +55,21 @@ Restore drill (do this before go-live and quarterly):
 
 ```bash
 createdb -O ledgerguard_owner ledgerguard_restore
-pg_restore --no-owner --role=ledgerguard_owner -d ledgerguard_restore /backups/ledgerguard-db-YYYYMMDDTHHMMSS.dump
+pg_restore --exit-on-error --no-owner --role=ledgerguard_owner -d ledgerguard_restore /backups/ledgerguard-db-YYYYMMDDTHHMMSS.dump
 DATABASE_URL=postgres://ledgerguard_owner:...@host/ledgerguard_restore python manage.py harden_database
 DATABASE_URL=postgres://ledgerguard_owner:...@host/ledgerguard_restore python manage.py check_integrity
 tar -xzf /backups/ledgerguard-media-YYYYMMDDTHHMMSS.tar.gz -C /var/lib/ledgerguard/
 ```
 
-Record the restore time to confirm the recovery-time objective.
+Record the restore time to confirm the recovery-time objective. Compare row counts and ledger debit/credit totals
+between the live and restored databases; the activity log has one more entry in the live database (the backup
+records its own completion after the dump).
+
+**Version match.** The image ships PostgreSQL 17 client tools (Debian 13), so run the database on PostgreSQL 17. A
+pg_dump newer than the server it is restored into writes settings that server rejects (e.g. `transaction_timeout`
+from a 17 dump restored into 16), and `--exit-on-error` will stop the restore. Verified on the container stack:
+backup, restore into a new database, `harden_database`, `check_integrity` (OK), identical ledger totals, and the
+application role refused UPDATE/DELETE/TRUNCATE on the restored copy, in about 7 seconds for the demo dataset.
 
 ## Monitoring
 

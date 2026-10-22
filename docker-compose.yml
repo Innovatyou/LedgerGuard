@@ -19,7 +19,7 @@ x-app: &app
 
 services:
   db:
-    image: postgres:16
+    image: postgres:17
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       LEDGERGUARD_OWNER_PASSWORD: ${LEDGERGUARD_OWNER_PASSWORD:?set LEDGERGUARD_OWNER_PASSWORD}

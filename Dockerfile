@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12-slim-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -6,6 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # postgresql-client provides pg_dump/pg_restore for the verified backup command
 # (psycopg[binary] bundles libpq). Set INSTALL_PG_CLIENT=0 only if backups run elsewhere.
+# Debian 13 ships PostgreSQL 17 client tools: keep the database server on PostgreSQL 17 so that
+# backups restore cleanly (a newer pg_dump writes settings an older server rejects on restore).
 ARG INSTALL_PG_CLIENT=1
 RUN if [ "$INSTALL_PG_CLIENT" = "1" ]; then \
       apt-get update && apt-get install -y --no-install-recommends postgresql-client \
